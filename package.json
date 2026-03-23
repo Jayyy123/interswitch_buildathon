@@ -1,0 +1,29 @@
+{
+  "name": "omo-health",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.25.0",
+  "scripts": {
+    "dev:ui": "pnpm --filter ui dev",
+    "dev:backend": "pnpm --filter backend start:dev",
+    "build:ui": "pnpm --filter ui build",
+    "build:backend": "pnpm --filter backend build",
+    "lint": "pnpm --filter ui lint",
+    "prepare": "husky || true"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "msw",
+      "sharp",
+      "unrs-resolver"
+    ]
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.8.1"
+  }
+}
