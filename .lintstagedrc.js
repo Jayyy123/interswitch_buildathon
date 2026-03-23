@@ -6,7 +6,7 @@ const config = {
     (files) => {
       const cwd = path.join(__dirname, 'apps/ui');
       const relative = files.map((f) => path.relative(cwd, f)).join(' ');
-      return `pnpm --filter ui lint -- --fix ${relative}`;
+      return `pnpm --filter ui exec eslint --fix ${relative}`;
     },
   ],
   'apps/ui/**/*.{ts,tsx,json,css,md}': ['prettier --write'],
