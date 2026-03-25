@@ -7,6 +7,7 @@ import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { TermiiService } from '../termii/termii.service';
 import { SendOtpDto, VerifyOtpDto } from './dto/auth.dto';
 
 @Injectable()
@@ -14,6 +15,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly termiiService: TermiiService,
   ) {}
 
   /**
@@ -40,8 +42,8 @@ export class AuthService {
       },
     });
 
-    // TODO: send rawCode via Termii SMS in production
-    // await this.termiiService.sendSms(dto.phone, `Your OmoHealth OTP is: ${rawCode}`);
+    // Send OTP via Termii SMS (fire-and-forget — errors logged, not rethrown)
+    await this.termiiService.sendOtp(dto.phone, rawCode);
 
     return {
       message: 'OTP sent successfully',
