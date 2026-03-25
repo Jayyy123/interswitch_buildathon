@@ -14,7 +14,10 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "@nestjs/core",
+      "@prisma/engines",
+      "bcrypt",
       "msw",
+      "prisma",
       "sharp",
       "unrs-resolver"
     ]
