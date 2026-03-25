@@ -1,27 +1,21 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsString } from 'class-validator';
+import { UserRole } from '@prisma/client';
 
-export class RegisterDto {
-  @IsEmail()
-  email: string;
-
-  @IsString()
-  @MinLength(8)
-  password: string;
-
+export class SendOtpDto {
   @IsString()
   @IsNotEmpty()
-  firstName: string;
-
-  @IsString()
-  @IsNotEmpty()
-  lastName: string;
+  phone: string;
 }
 
-export class LoginDto {
-  @IsEmail()
-  email: string;
+export class VerifyOtpDto {
+  @IsString()
+  @IsNotEmpty()
+  phone: string;
 
   @IsString()
   @IsNotEmpty()
-  password: string;
+  code: string;
+
+  @IsEnum(UserRole)
+  role: UserRole;
 }
