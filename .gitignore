@@ -41,3 +41,6 @@ yarn-error.log*
 
 # Testing
 coverage/
+
+# Docs
+OmoHealth_Product_Document.pdf

@@ -1,19 +1,20 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { LoginDto, RegisterDto } from './dto/auth.dto';
+import { SendOtpDto, VerifyOtpDto } from './dto/auth.dto';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post('register')
-  register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  @Post('send-otp')
+  @HttpCode(HttpStatus.OK)
+  sendOtp(@Body() dto: SendOtpDto) {
+    return this.authService.sendOtp(dto);
   }
 
-  @Post('login')
+  @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  verifyOtp(@Body() dto: VerifyOtpDto) {
+    return this.authService.verifyOtp(dto);
   }
 }
