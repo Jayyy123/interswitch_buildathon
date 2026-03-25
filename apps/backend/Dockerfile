@@ -10,6 +10,12 @@ RUN pnpm install --frozen-lockfile
 COPY apps/backend ./apps/backend
 
 WORKDIR /app/apps/backend
+
+# DATABASE_URL is required by prisma.config.ts even during generate.
+# Pass it as a build arg from Railway's build settings.
+ARG DATABASE_URL
+ENV DATABASE_URL=${DATABASE_URL}
+
 RUN pnpm run prisma:generate && pnpm run build
 
 # ── Stage 2: run ──────────────────────────────────────────────────────────────
