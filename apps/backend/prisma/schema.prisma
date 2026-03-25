@@ -1,0 +1,204 @@
+// OmoHealth – Prisma Schema
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  IYALOJA
+  MEMBER
+  CLINIC_ADMIN
+}
+
+enum PlanTier {
+  BRONZE // ₦500/wk · ₦100k/yr · ₦75k cap/claim
+  SILVER // ₦1,000/wk · ₦150k/yr · ₦100k cap/claim
+  GOLD   // ₦2,000/wk · ₦300k/yr · ₦200k cap/claim
+}
+
+enum MemberStatus {
+  ACTIVE
+  PAUSED     // opted out via SMS STOP — no debits, no claims
+  FLAGGED    // admin-flagged — claims blocked
+  INCOMPLETE // BVN returned no phone — wallet not yet created
+}
+
+enum ContributionSource {
+  DIRECT_DEBIT
+  CASH
+}
+
+enum ContributionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum ClaimStatus {
+  PENDING
+  APPROVED
+  PAID
+  REJECTED
+  FAILED // hospital transfer bounced — can retry within 24h
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+/// Central auth table. Everyone who can log in has a User row.
+/// Auth is phone + OTP — no passwords.
+model User {
+  id        String   @id @default(uuid())
+  phone     String   @unique
+  role      UserRole
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  association Association? // set when role = IYALOJA
+  member      Member?      // set when user is also enrolled as a member
+  clinicAdmin ClinicAdmin? // set when role = CLINIC_ADMIN
+
+  @@map("users")
+}
+
+/// Short-lived OTP for phone-based login. All roles share this table.
+model OtpCode {
+  id        String   @id @default(uuid())
+  phone     String
+  code      String   // bcrypt-hashed 6-digit code
+  expiresAt DateTime // 5 minutes from creation
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("otp_codes")
+}
+
+/// The health pool. Owned by one Iyaloja (User with role = IYALOJA).
+/// poolBalance is stored and updated — not computed — for fast reads.
+model Association {
+  id              String    @id @default(uuid())
+  userId          String    @unique // the Iyaloja's User ID
+  name            String
+  cacNumber       String?
+  plan            PlanTier  @default(BRONZE)
+  poolBalance     Float     @default(0)
+  anniversaryDate DateTime? // coverage resets each year on this date
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id])
+  members       Member[]
+  contributions Contribution[]
+  claims        Claim[]
+
+  @@map("associations")
+}
+
+/// A person enrolled in a specific association.
+/// One person can appear in multiple associations (separate rows, stacked coverage).
+/// userId is optional — Iyaloja enrolls members by BVN; they get a User row
+/// only if they log in to check coverage.
+model Member {
+  id                   String       @id @default(uuid())
+  userId               String?      @unique // optional — set if member has a login
+  associationId        String
+  bvn                  String
+  phone                String
+  name                 String?
+  status               MemberStatus @default(ACTIVE)
+  coverageUsedThisYear Float        @default(0) // resets on Association.anniversaryDate
+  optOut               Boolean      @default(false)
+  waitingPeriodStart   DateTime     @default(now()) // 30-day minor / 90-day major
+  enrolledAt           DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  user          User?          @relation(fields: [userId], references: [id])
+  association   Association    @relation(fields: [associationId], references: [id])
+  wallet        Wallet?
+  contributions Contribution[]
+  claims        Claim[]
+
+  @@unique([associationId, bvn]) // no duplicate BVN in the same association
+  @@map("members")
+}
+
+/// Interswitch wallet for a member. Used for weekly direct debit.
+/// Only created when member status moves from INCOMPLETE → ACTIVE.
+model Wallet {
+  id             String   @id @default(uuid())
+  memberId       String   @unique
+  interswitchRef String   @unique // Interswitch wallet ID
+  balance        Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  member Member @relation(fields: [memberId], references: [id])
+
+  @@map("wallets")
+}
+
+/// One row per weekly debit attempt or manual cash entry.
+/// Tracks money IN to the pool.
+/// On SUCCESS → Association.poolBalance is incremented.
+/// Duplicate check: (memberId, week) must be unique per successful debit.
+model Contribution {
+  id             String             @id @default(uuid())
+  memberId       String
+  associationId  String
+  amount         Float
+  source         ContributionSource @default(DIRECT_DEBIT)
+  status         ContributionStatus @default(PENDING)
+  interswitchRef String?            // Interswitch debit reference
+  week           DateTime           // the Monday this contribution covers
+  createdAt      DateTime           @default(now())
+
+  member      Member      @relation(fields: [memberId], references: [id])
+  association Association @relation(fields: [associationId], references: [id])
+
+  @@map("contributions")
+}
+
+/// Hospital payout. Tracks money OUT of the pool.
+/// Flow: PENDING → APPROVED → PAID
+///                           ↘ FAILED (hospital transfer bounced)
+///       PENDING → REJECTED
+/// On PAID → Association.poolBalance decremented, Member.coverageUsedThisYear incremented.
+model Claim {
+  id              String      @id @default(uuid())
+  associationId   String
+  memberId        String
+  hospitalName    String
+  hospitalAccount String?     // bank account for Interswitch transfer
+  billAmount      Float       // what the hospital charged
+  approvedAmount  Float?      // capped at plan limit — what the pool pays
+  billPhotoUrl    String?     // Cloudinary URL (wired up later)
+  status          ClaimStatus @default(PENDING)
+  interswitchRef  String?     // Interswitch payment reference
+  otpVerified     Boolean     @default(false) // required for claims > ₦50,000
+  description     String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  association Association @relation(fields: [associationId], references: [id])
+  member      Member      @relation(fields: [memberId], references: [id])
+
+  @@map("claims")
+}
+
+/// Clinic staff who look up patient coverage via the Clinic Portal.
+/// Must log in via phone + OTP like all other users.
+model ClinicAdmin {
+  id         String @id @default(uuid())
+  userId     String @unique
+  clinicName String
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("clinic_admins")
+}
