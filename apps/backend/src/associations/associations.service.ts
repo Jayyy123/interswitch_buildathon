@@ -39,11 +39,15 @@ export class AssociationsService {
       },
     });
 
-    // Auto-create pool wallet (fire-and-forget — failure must not block association creation)
+    // Auto-create pool wallet.
+    // IMPORTANT: ISW rejects duplicate mobileNo — do NOT use the Iyaloja's real phone.
+    // Derive a deterministic unique local-format phone from the association UUID digits.
+    const assocDigits = association.id.replace(/[^0-9]/g, '').padEnd(8, '0').slice(0, 8);
+    const poolPhone = `080${assocDigits}`; // e.g. 08009876564 — unique per association
     try {
       const poolWallet = await this.interswitch.createMemberWallet(
-        `${dto.name}-Pool`,
-        user?.phone ?? `+234${association.id.slice(0, 10)}`,
+        `${dto.name} Pool`,
+        poolPhone,
         `pool-${association.id}@omohealth.ng`,
       );
       await this.prisma.association.update({
@@ -55,7 +59,7 @@ export class AssociationsService {
       });
       this.logger.log(`Pool wallet created for association ${association.id}: ${poolWallet.walletId}`);
     } catch (err) {
-      this.logger.warn(`Pool wallet creation failed for ${association.id}: ${err?.message}`);
+      this.logger.warn(`Pool wallet creation failed for ${association.id}: ${err?.message ?? JSON.stringify(err)}`);
     }
 
     // If iyaloja is also enrolled as a member in their own association, create their personal wallet
@@ -120,6 +124,52 @@ export class AssociationsService {
       recentClaims: claims,
       totalContributed: contributions._sum.amount ?? 0,
     };
+  }
+
+  /**
+   * GET /associations
+   * - IYALOJA → returns associations they own (created)
+   * - MEMBER   → returns the association(s) they are enrolled in
+   *              (matched via their User.phone → Member.phone)
+   * - CLINIC_ADMIN → returns [] (no association ownership)
+   */
+  async listAssociations(userId: string, role: string) {
+    if (role === 'IYALOJA') {
+      const associations = await this.prisma.association.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+      });
+      return Promise.all(
+        associations.map(async (a) => {
+          const memberCount = await this.prisma.member.count({ where: { associationId: a.id } });
+          return { ...a, memberCount, userRole: 'OWNER' };
+        }),
+      );
+    }
+
+    if (role === 'MEMBER') {
+      // Look up the user's phone, then find any member records with that phone
+      const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { phone: true } });
+      if (!user) return [];
+      // Normalise: strip +234 → 0XXXXXXXXX for matching
+      const localPhone = user.phone.startsWith('+234') ? '0' + user.phone.slice(4) : user.phone;
+      const members = await this.prisma.member.findMany({
+        where: { phone: { in: [user.phone, localPhone] } },
+        include: {
+          association: true,
+        },
+      });
+      return members.map((m) => ({
+        ...m.association,
+        memberStatus: m.status,
+        memberId: m.id,
+        walletId: m.walletId,
+        walletAccountNumber: m.walletAccountNumber,
+        userRole: 'MEMBER',
+      }));
+    }
+
+    return [];
   }
 
   async verifyAndCreditPool(id: string, dto: VerifyPaymentDto, userId: string) {
