@@ -63,8 +63,9 @@ export class AuthService {
 
     await this.prisma.otpCode.update({ where: { id: otpRecord.id }, data: { used: true } });
 
-    // Find or create User
+    // Find or create User — isNewUser tells the UI to redirect to initial setup
     let user = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
+    const isNewUser = !user;
     if (!user) {
       user = await this.prisma.user.create({
         data: { phone: dto.phone, role: dto.role },
@@ -75,10 +76,20 @@ export class AuthService {
       throw new BadRequestException(`This phone is registered as ${user.role}, not ${dto.role}`);
     }
 
+    // Check if setup is complete so UI knows which screen to show
+    const [association, clinicAdmin] = await Promise.all([
+      this.prisma.association.findFirst({ where: { userId: user.id }, select: { id: true } }),
+      this.prisma.clinicAdmin.findFirst({ where: { userId: user.id }, select: { id: true } }),
+    ]);
+
     const token = this.jwtService.sign({ sub: user.id, phone: user.phone, role: user.role });
     return {
       accessToken: token,
       user: { id: user.id, phone: user.phone, role: user.role },
+      // UI flags:
+      isNewUser,                              // true → redirect to onboarding/setup
+      hasAssociation: !!association,          // for IYALOJA: false → show create-association screen
+      hasClinic: !!clinicAdmin,              // for CLINIC_ADMIN: false → show create-clinic screen
     };
   }
 }
