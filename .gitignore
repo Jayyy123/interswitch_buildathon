@@ -44,3 +44,5 @@ coverage/
 
 # Docs
 OmoHealth_Product_Document.pdf
+apps/backend/prisma/migrations/20260326000001_add_hospital_bank_code/migration.sql
+e2e.md
