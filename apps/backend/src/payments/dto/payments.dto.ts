@@ -3,23 +3,39 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  IsUrl,
-  Min,
 } from 'class-validator';
 
-export class InitiatePaymentDto {
-  @IsNumber()
-  @Min(1)
-  amount: number; // in Naira (we convert to kobo internally)
+export class SubmitClaimDto {
+  @IsString()
+  @IsNotEmpty()
+  associationId: string;
 
   @IsString()
   @IsNotEmpty()
-  description: string;
+  hospitalName: string;
 
-  @IsUrl()
-  redirectUrl: string;
-
-  @IsOptional()
   @IsString()
-  currency?: string;
+  @IsOptional()
+  hospitalAccount?: string;
+
+  @IsString()
+  @IsOptional()
+  hospitalBankCode?: string;
+
+  @IsNumber()
+  billAmount: number; // NGN
+
+  @IsString()
+  @IsOptional()
+  billPhotoUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+}
+
+export class ApproveClaimDto {
+  @IsString()
+  @IsOptional()
+  safeTokenOtp?: string; // Required for claims >= 50,000 NGN
 }

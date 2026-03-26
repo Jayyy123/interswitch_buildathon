@@ -54,11 +54,11 @@ enum ClaimStatus {
 /// Central auth table. Everyone who can log in has a User row.
 /// Auth is phone + OTP — no passwords.
 model User {
-  id        String   @id @default(uuid())
-  phone     String   @unique
-  role      UserRole
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(uuid())
+  phone       String   @unique
+  role        UserRole
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   association Association? // set when role = IYALOJA
   member      Member?      // set when user is also enrolled as a member
@@ -84,10 +84,14 @@ model OtpCode {
 model Association {
   id              String    @id @default(uuid())
   userId          String    @unique // the Iyaloja's User ID
-  name            String
-  cacNumber       String?
-  plan            PlanTier  @default(BRONZE)
-  poolBalance     Float     @default(0)
+  name                  String
+  cacNumber             String?
+  plan                  PlanTier  @default(BRONZE)
+  monthlyDues           Float?
+  coverageLimit         Float?
+  poolBalance           Float     @default(0)
+  walletId              String?   // Interswitch merchant-wallet walletId for this iyaloja
+  walletAccountNumber   String?   // Settlement account number (for receiving payments)
   anniversaryDate DateTime? // coverage resets each year on this date
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -112,9 +116,11 @@ model Member {
   phone                String
   name                 String?
   status               MemberStatus @default(ACTIVE)
-  coverageUsedThisYear Float        @default(0) // resets on Association.anniversaryDate
+  walletId             String?      // Interswitch merchant-wallet ID for this member
+  walletAccountNumber  String?      // Settlement account number (pay dues to this account)
+  coverageUsedThisYear Float        @default(0)
   optOut               Boolean      @default(false)
-  waitingPeriodStart   DateTime     @default(now()) // 30-day minor / 90-day major
+  waitingPeriodStart   DateTime     @default(now())
   enrolledAt           DateTime     @default(now())
   updatedAt            DateTime     @updatedAt
 
@@ -175,6 +181,7 @@ model Claim {
   memberId        String
   hospitalName    String
   hospitalAccount String?     // bank account for Interswitch transfer
+  hospitalBankCode String?    // CBN bank code (e.g. "044" for Access Bank)
   billAmount      Float       // what the hospital charged
   approvedAmount  Float?      // capped at plan limit — what the pool pays
   billPhotoUrl    String?     // Cloudinary URL (wired up later)
