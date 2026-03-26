@@ -1,4 +1,5 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class EnrollMemberDto {
   @IsString()
@@ -20,4 +21,31 @@ export class EnrollMemberDto {
   @IsString()
   @IsOptional()
   email?: string;
+}
+
+// ─── Bulk Enroll ─────────────────────────────────────────────────────────────
+
+export class BulkEnrollMemberDto {
+  @IsString()
+  @IsNotEmpty()
+  full_name: string; // matches CSV column name from UI template
+
+  @IsString()
+  @IsNotEmpty()
+  phone: string;
+
+  @IsString()
+  @IsNotEmpty()
+  bvn: string;
+}
+
+export class BulkEnrollDto {
+  @IsString()
+  @IsNotEmpty()
+  associationId: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BulkEnrollMemberDto)
+  members: BulkEnrollMemberDto[];
 }

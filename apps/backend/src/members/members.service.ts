@@ -180,4 +180,73 @@ export class MembersService {
       enrolledAt: member.enrolledAt,
     };
   }
+
+  // ─── Bulk Enroll ─────────────────────────────────────────────────────────────
+
+  /**
+   * POST /members/bulk-enroll
+   * Enrolls each member in the array sequentially.
+   * Returns a per-row result — batch never fails entirely due to one bad row.
+   */
+  async bulkEnrollMembers(
+    associationId: string,
+    members: Array<{ full_name: string; phone: string; bvn: string }>,
+    iyalojaUserId: string,
+  ) {
+    const results: Array<{
+      index: number;
+      name: string;
+      phone: string;
+      status: 'enrolled' | 'skipped' | 'failed';
+      memberId?: string;
+      walletAccountNumber?: string;
+      reason?: string;
+    }> = [];
+
+    for (let i = 0; i < members.length; i++) {
+      const row = members[i];
+      try {
+        const enrolled = await this.enrollMember(
+          {
+            associationId,
+            bvn: row.bvn,
+            phone: row.phone,
+            name: row.full_name,
+          },
+          iyalojaUserId,
+        );
+        results.push({
+          index: i,
+          name: row.full_name,
+          phone: row.phone,
+          status: 'enrolled',
+          memberId: enrolled.memberId,
+          walletAccountNumber: enrolled.bankAccount?.accountNumber,
+        });
+      } catch (err: any) {
+        const isDuplicate =
+          err?.message?.includes('already enrolled') || err?.status === 409;
+        results.push({
+          index: i,
+          name: row.full_name,
+          phone: row.phone,
+          status: isDuplicate ? 'skipped' : 'failed',
+          reason: err?.message ?? 'Unknown error',
+        });
+      }
+    }
+
+    const enrolled = results.filter((r) => r.status === 'enrolled').length;
+    const skipped  = results.filter((r) => r.status === 'skipped').length;
+    const failed   = results.filter((r) => r.status === 'failed').length;
+
+    return {
+      total: members.length,
+      enrolled,
+      skipped,
+      failed,
+      results,
+    };
+  }
 }
+

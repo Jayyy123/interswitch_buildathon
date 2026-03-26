@@ -13,4 +13,5 @@ RUN pnpm run prisma:generate && pnpm run build
 RUN CI=true pnpm prune --prod
 
 EXPOSE 3000
-CMD ["sh", "-c", "node_modules/.bin/prisma db push && node dist/main"]
+CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node dist/main"]
+

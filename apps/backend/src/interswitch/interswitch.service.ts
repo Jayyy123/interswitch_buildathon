@@ -123,9 +123,17 @@ export class InterswitchService {
   private readonly walletGatewayHost = 'api-gateway.interswitchng.com'; // Generic wallet transfers
 
   // ── SVA credentials (quicktellerservice — bank list with TerminalID)
-  private readonly svaClientId = 'INTERSWITCH_SVA_CLIENT_ID';
-  private readonly svaSecretKey = 'INTERSWITCH_SVA_SECRET_KEY';
-  private readonly terminalId = '3PBL0001';
+  private readonly svaClientId: string;
+  private readonly svaSecretKey: string;
+  private readonly terminalId: string;
+
+  // ── GI/MX6072 credentials (virtual accounts, merchant wallets)
+  private readonly giClientId: string;
+  private readonly giSecretKey: string;
+
+  // ── BVN Marketplace credentials
+  private readonly bvnClientId: string;
+  private readonly bvnSecretKey: string;
 
   private qtbCache: TokenCache | null = null;
   private mpCache: TokenCache | null = null;
@@ -143,11 +151,21 @@ export class InterswitchService {
     this.payItemId    = this.configService.get('INTERSWITCH_PAY_ITEM_ID', '9405967');
     this.mpClientId   = this.configService.getOrThrow('INTERSWITCH_MARKETPLACE_CLIENT_ID');
     this.mpSecretKey  = this.configService.getOrThrow('INTERSWITCH_MARKETPLACE_SECRET_KEY');
-    // Wallet (MX275969) — using QTB credentials (same merchant account)
+    // Wallet (MX275969)
     this.walletClientId  = this.configService.get('INTERSWITCH_WALLET_CLIENT_ID', this.qtbClientId);
     this.walletSecretKey = this.configService.get('INTERSWITCH_WALLET_SECRET_KEY', this.qtbSecretKey);
     this.walletId        = this.configService.get('INTERSWITCH_WALLET_ID', '2700014982');
     this.walletPin       = this.configService.get('INTERSWITCH_WALLET_PIN', '1234');
+    // SVA (bank list + account name inquiry + fund transfers)
+    this.svaClientId  = this.configService.getOrThrow('INTERSWITCH_SVA_CLIENT_ID');
+    this.svaSecretKey = this.configService.getOrThrow('INTERSWITCH_SVA_SECRET_KEY');
+    this.terminalId   = this.configService.get('INTERSWITCH_TERMINAL_ID', '3PBL0001');
+    // GI/MX6072 (virtual accounts, merchant wallets)
+    this.giClientId  = this.configService.getOrThrow('INTERSWITCH_GI_CLIENT_ID');
+    this.giSecretKey = this.configService.getOrThrow('INTERSWITCH_GI_SECRET_KEY');
+    // BVN lookup credentials
+    this.bvnClientId = this.configService.getOrThrow('INTERSWITCH_BVN_CLIENT_ID');
+    this.bvnSecretKey = this.configService.getOrThrow('INTERSWITCH_BVN_SECRET_KEY');
   }
 
   // ─── Token helpers ────────────────────────────────────────────────────────────
@@ -218,21 +236,14 @@ export class InterswitchService {
   async getGIToken(): Promise<string> {
     const now = Date.now();
     if (this.giCache && this.giCache.expiresAt > now) return this.giCache.token;
-    // GI credentials are hardcoded per confirmed sweep result
-    const token = await this.fetchOauthToken(
-      'INTERSWITCH_GI_CLIENT_ID',
-      'secret',
-    );
+    const token = await this.fetchOauthToken(this.giClientId, this.giSecretKey);
     this.giCache = { token, expiresAt: now + 55 * 60 * 1000 };
     this.logger.log('GI (MX6072) token refreshed');
     return token;
   }
 
   async lookupBvn(bvn: string): Promise<BvnDetails> {
-    // Dedicated BVN credentials — confirmed working on api-marketplace-routing host
-    const bvnClientId = 'INTERSWITCH_BVN_CLIENT_ID';
-    const bvnSecret   = 'INTERSWITCH_BVN_SECRET_KEY';
-    const token = await this.fetchOauthToken(bvnClientId, bvnSecret, 'profile');
+    const token = await this.fetchOauthToken(this.bvnClientId, this.bvnSecretKey, 'profile');
     try {
       const { data } = await firstValueFrom(
         this.httpService.post(
