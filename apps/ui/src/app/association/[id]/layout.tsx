@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react';
 
+import { AssociationAccessGuard } from '@/components/association/association-access-guard';
 import { PortalShell } from '@/components/portal-shell';
 
 type AssociationScopedLayoutProps = {
@@ -7,10 +8,7 @@ type AssociationScopedLayoutProps = {
   params: Promise<{ id: string }>;
 };
 
-export default async function AssociationScopedLayout({
-  children,
-  params,
-}: AssociationScopedLayoutProps) {
+const AssociationScopedLayout = async ({ children, params }: AssociationScopedLayoutProps) => {
   const { id } = await params;
   const base = `/association/${id}`;
 
@@ -22,14 +20,18 @@ export default async function AssociationScopedLayout({
   ];
 
   return (
-    <PortalShell
-      role="Association"
-      title="Association portal"
-      subtitle={`Association ID: ${id}`}
-      loginPath="/login/association"
-      navItems={associationNav}
-    >
-      {children}
-    </PortalShell>
+    <AssociationAccessGuard associationId={id}>
+      <PortalShell
+        role="Association"
+        title="Association portal"
+        subtitle={`Association ID: ${id}`}
+        loginPath="/login/association"
+        navItems={associationNav}
+      >
+        {children}
+      </PortalShell>
+    </AssociationAccessGuard>
   );
-}
+};
+
+export default AssociationScopedLayout;

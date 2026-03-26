@@ -1,4 +1,5 @@
 import { getStoredToken } from '@/lib/session';
+import type { Association, ClaimDetail, CreateAssociationPayload } from '@/lib/auth-types';
 
 const baseUrl = () =>
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) || 'http://localhost:3000';
@@ -22,10 +23,10 @@ const parseErrorMessage = (body: unknown): string => {
   return 'Something went wrong';
 };
 
-export async function apiFetch<T>(
+export const apiFetch = async <T>(
   path: string,
   options: RequestInit & { token?: string | null; skipAuth?: boolean } = {},
-): Promise<T> {
+): Promise<T> => {
   const { token: tokenOpt, skipAuth, ...init } = options;
   const token = skipAuth ? null : (tokenOpt ?? getStoredToken());
 
@@ -61,7 +62,7 @@ export async function apiFetch<T>(
   }
 
   return body as T;
-}
+};
 
 export async function sendOtp(phone: string) {
   const result = await apiFetch<{ message: string; code?: string }>('/auth/send-otp', {
@@ -72,7 +73,7 @@ export async function sendOtp(phone: string) {
   return result;
 }
 
-export async function verifyOtp(payload: { phone: string; code: string; role: string }) {
+export const verifyOtp = async (payload: { phone: string; code: string; role: string }) => {
   const result = await apiFetch<{
     accessToken: string;
     user: { id: string; phone: string; role: string };
@@ -82,9 +83,9 @@ export async function verifyOtp(payload: { phone: string; code: string; role: st
     skipAuth: true,
   });
   return result;
-}
+};
 
-export async function getClaims() {
+export const getClaims = async () => {
   const result = await apiFetch<
     {
       id: string;
@@ -98,11 +99,22 @@ export async function getClaims() {
     }[]
   >('/payments/claims');
   return result;
-}
+};
 
-export async function getClaimById(id: string) {
-  const result = await apiFetch<import('@/lib/auth-types').ClaimDetail>(
-    `/payments/claims/${encodeURIComponent(id)}`,
-  );
+export const getClaimById = async (id: string) => {
+  const result = await apiFetch<ClaimDetail>(`/payments/claims/${encodeURIComponent(id)}`);
   return result;
-}
+};
+
+export const getMyAssociations = async () => {
+  const result = await apiFetch<Association[]>('/associations');
+  return result;
+};
+
+export const createAssociation = async (payload: CreateAssociationPayload) => {
+  const result = await apiFetch<Association>('/associations', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return result;
+};

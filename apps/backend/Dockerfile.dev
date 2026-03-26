@@ -13,5 +13,5 @@ RUN pnpm run prisma:generate
 
 EXPOSE 3000
 
-# migrate deploy applies existing SQL migrations only (never creates new ones)
-CMD ["sh", "-c", "pnpm exec prisma migrate deploy && pnpm run start:dev"]
+# Dev runtime: align schema directly for environments without migration history.
+CMD ["sh", "-c", "pnpm exec prisma db push && pnpm run start:dev"]

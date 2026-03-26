@@ -12,7 +12,6 @@ import { useAuth } from '@/contexts/auth-context';
 import { ApiError, sendOtp, verifyOtp } from '@/lib/api';
 import { portalKindToApiRole } from '@/lib/portal-role';
 import type { AuthUser } from '@/lib/auth-types';
-import { isOnboardingComplete } from '@/lib/session';
 
 type LoginFormValues = {
   phone: string;
@@ -54,13 +53,12 @@ export const LoginForm = ({ role }: LoginFormProps) => {
     if (!hydrated || !user) return;
     if (user.role !== apiRole) return;
     const next =
-      searchParams.get('next') ||
-      (role === 'association' ? `/association/${user.id}` : `/clinic/${user.id}`);
+      searchParams.get('next') || (role === 'association' ? '/association' : `/clinic/${user.id}`);
     router.replace(next);
   }, [hydrated, user, apiRole, role, router, searchParams]);
 
   const defaultPath = (u: AuthUser) =>
-    role === 'association' ? `/association/${u.id}` : `/clinic/${u.id}`;
+    role === 'association' ? '/association' : `/clinic/${u.id}`;
 
   const sendOtpMutation = useMutation({
     mutationFn: sendOtp,
@@ -111,18 +109,8 @@ export const LoginForm = ({ role }: LoginFormProps) => {
         role: res.user.role as AuthUser['role'],
       };
       login(res.accessToken, authUser);
-      const hasOnboarded = isOnboardingComplete(authUser.id, authUser.role);
-      const fallbackPath = hasOnboarded
-        ? defaultPath(authUser)
-        : role === 'association'
-          ? `/association/${authUser.id}/setup`
-          : `/clinic/${authUser.id}/setup`;
-      const next = searchParams.get('next') || fallbackPath;
-      toast.success(
-        hasOnboarded
-          ? 'Signed in successfully.'
-          : 'Signed in. Let’s complete your account setup first.',
-      );
+      const next = searchParams.get('next') || defaultPath(authUser);
+      toast.success('Signed in successfully.');
       router.push(next);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Verification failed.';

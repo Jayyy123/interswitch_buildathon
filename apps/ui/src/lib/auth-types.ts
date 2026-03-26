@@ -26,3 +26,19 @@ export type ClaimDetail = ClaimListItem & {
   member: { id: string; userId: string | null };
   association: { id: string; name: string };
 };
+
+export type Association = {
+  id: string;
+  name: string;
+  plan: 'BRONZE' | 'SILVER' | 'GOLD';
+  poolBalance: number;
+  monthlyDues?: number;
+  coverageLimit?: number;
+};
+
+export type CreateAssociationPayload = {
+  name: string;
+  plan: 'BRONZE' | 'SILVER' | 'GOLD';
+  monthlyDues: number;
+  coverageLimit: number;
+};

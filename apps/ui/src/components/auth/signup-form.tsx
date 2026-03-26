@@ -12,7 +12,6 @@ import { useAuth } from '@/contexts/auth-context';
 import { ApiError, sendOtp, verifyOtp } from '@/lib/api';
 import { portalKindToApiRole } from '@/lib/portal-role';
 import type { AuthUser } from '@/lib/auth-types';
-import { isOnboardingComplete } from '@/lib/session';
 
 type SignupFormValues = {
   phone: string;
@@ -43,12 +42,12 @@ export const SignupForm = ({ role }: SignupFormProps) => {
     if (user.role !== apiRole) return;
     const next =
       searchParams.get('next') ||
-      (role === 'association' ? `/association/${user.id}/setup` : `/clinic/${user.id}/setup`);
+      (role === 'association' ? '/association' : `/clinic/${user.id}/setup`);
     router.replace(next);
   }, [hydrated, user, apiRole, role, router, searchParams]);
 
   const setupPath = (u: AuthUser) =>
-    role === 'association' ? `/association/${u.id}/setup` : `/clinic/${u.id}/setup`;
+    role === 'association' ? '/association' : `/clinic/${u.id}/setup`;
 
   const sendOtpMutation = useMutation({
     mutationFn: sendOtp,
@@ -98,15 +97,13 @@ export const SignupForm = ({ role }: SignupFormProps) => {
         phone: res.user.phone,
         role: res.user.role as AuthUser['role'],
       };
-      if (isOnboardingComplete(authUser.id, authUser.role)) {
-        toast.error('This account already exists. Please login instead.');
-        const loginPath = role === 'association' ? '/login/association' : '/login/clinic';
-        router.push(loginPath);
-        return;
-      }
       login(res.accessToken, authUser);
       const next = searchParams.get('next') || setupPath(authUser);
-      toast.success('Account ready. Let’s finish setup.');
+      toast.success(
+        role === 'association'
+          ? 'Account ready. Create or choose an association to continue.'
+          : 'Account ready. Let’s finish setup.',
+      );
       router.push(next);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Verification failed.';
