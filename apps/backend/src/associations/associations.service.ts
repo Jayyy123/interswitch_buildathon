@@ -126,6 +126,23 @@ export class AssociationsService {
     };
   }
 
+  async listAssociations(userId: string) {
+    const associations = await this.prisma.association.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Attach member count to each
+    const withCounts = await Promise.all(
+      associations.map(async (a) => {
+        const memberCount = await this.prisma.member.count({ where: { associationId: a.id } });
+        return { ...a, memberCount };
+      }),
+    );
+
+    return withCounts;
+  }
+
   async verifyAndCreditPool(id: string, dto: VerifyPaymentDto, userId: string) {
     const association = await this.prisma.association.findFirst({ where: { id, userId } });
     if (!association) throw new NotFoundException('Association not found');
