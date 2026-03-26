@@ -39,11 +39,15 @@ export class AssociationsService {
       },
     });
 
-    // Auto-create pool wallet (fire-and-forget — failure must not block association creation)
+    // Auto-create pool wallet.
+    // IMPORTANT: ISW rejects duplicate mobileNo — do NOT use the Iyaloja's real phone.
+    // Derive a deterministic unique local-format phone from the association UUID digits.
+    const assocDigits = association.id.replace(/[^0-9]/g, '').padEnd(8, '0').slice(0, 8);
+    const poolPhone = `080${assocDigits}`; // e.g. 08009876564 — unique per association
     try {
       const poolWallet = await this.interswitch.createMemberWallet(
-        `${dto.name}-Pool`,
-        user?.phone ?? `+234${association.id.slice(0, 10)}`,
+        `${dto.name} Pool`,
+        poolPhone,
         `pool-${association.id}@omohealth.ng`,
       );
       await this.prisma.association.update({
@@ -55,7 +59,7 @@ export class AssociationsService {
       });
       this.logger.log(`Pool wallet created for association ${association.id}: ${poolWallet.walletId}`);
     } catch (err) {
-      this.logger.warn(`Pool wallet creation failed for ${association.id}: ${err?.message}`);
+      this.logger.warn(`Pool wallet creation failed for ${association.id}: ${err?.message ?? JSON.stringify(err)}`);
     }
 
     // If iyaloja is also enrolled as a member in their own association, create their personal wallet
