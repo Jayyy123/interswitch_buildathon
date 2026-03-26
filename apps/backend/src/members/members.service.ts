@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { MemberStatus } from '@prisma/client';
@@ -11,6 +12,8 @@ import { EnrollMemberDto } from './dto/members.dto';
 
 @Injectable()
 export class MembersService {
+  private readonly logger = new Logger(MembersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly interswitch: InterswitchService,
@@ -19,57 +22,89 @@ export class MembersService {
 
   /**
    * Full member enrollment flow:
-   * 1. BVN lookup → get member's real name
-   * 2. Check for duplicates (BVN per association)
-   * 3. Create Member record
-   * 4. Create virtual Interswitch account (weekly debit wallet)
-   * 5. Send onboarding SMS
+   * 1. Verify association belongs to this Iyaloja
+   * 2. BVN lookup → get verified name
+   * 3. Duplicate BVN check
+   * 4. Create Member record
+   * 5. Create Interswitch merchant wallet (Member.walletId + walletAccountNumber)
+   * 6. Create Wema Bank virtual account (Member.wallet → Wallet.interswitchRef)
+   * 7. Send onboarding SMS with the Wema Bank account number to pay dues into
    */
   async enrollMember(dto: EnrollMemberDto, iyalojaUserId: string) {
-    // Verify the association belongs to this Iyaloja
     const association = await this.prisma.association.findFirst({
       where: { id: dto.associationId, userId: iyalojaUserId },
     });
-    if (!association) {
-      throw new NotFoundException('Association not found or not yours');
-    }
+    if (!association) throw new NotFoundException('Association not found or not yours');
 
-    // Check for duplicate BVN in this association
     const existing = await this.prisma.member.findUnique({
       where: { associationId_bvn: { associationId: dto.associationId, bvn: dto.bvn } },
     });
-    if (existing) {
-      throw new BadRequestException('This BVN is already enrolled in this association');
-    }
+    if (existing) throw new BadRequestException('This BVN is already enrolled in this association');
 
-    // BVN lookup via Interswitch Marketplace
-    let bvnDetails: { firstName: string; lastName: string; phone: string };
+    // BVN lookup — returns real name from Interswitch Identity API
+    // In QA sandbox this always fails (BVN must be linked to an ISW wallet),
+    // so Iyaloja must provide dto.name as a fallback.
+    let resolvedName: string | null = null;
     try {
-      bvnDetails = await this.interswitch.lookupBvn(dto.bvn);
+      const bvnDetails = await this.interswitch.lookupBvn(dto.bvn);
+      const fromBvn = [bvnDetails.firstName, bvnDetails.lastName].filter(Boolean).join(' ');
+      if (fromBvn) resolvedName = fromBvn;
     } catch {
-      // Fallback: use provided phone if BVN lookup fails (sandbox may not return all BVNs)
-      bvnDetails = { firstName: 'Member', lastName: '', phone: dto.phone };
+      // BVN lookup failed — will fall through to dto.name
     }
 
-    const fullName = [bvnDetails.firstName, bvnDetails.lastName].filter(Boolean).join(' ');
+    if (!resolvedName && dto.name) {
+      resolvedName = dto.name;
+    }
 
-    // Create member
+    if (!resolvedName) {
+      throw new BadRequestException(
+        'Could not resolve member name via BVN. Please provide the member name in the request body.',
+      );
+    }
+
+    const fullName = resolvedName;
+
+    // Create member record
     const member = await this.prisma.member.create({
       data: {
         associationId: dto.associationId,
         bvn: dto.bvn,
         phone: dto.phone,
-        name: fullName || null,
+        name: fullName,
         status: MemberStatus.ACTIVE,
         waitingPeriodStart: new Date(),
         enrolledAt: new Date(),
       },
     });
 
-    // Create Interswitch virtual account (fire-and-forget — wallet can be set up later)
-    let walletRef: string | null = null;
+    // ── Step 5: Create Interswitch merchant wallet (personal wallet for this member) ──
+    let walletId: string | null = null;
+    let walletAccountNumber: string | null = null;
     try {
-      const va = await this.interswitch.createVirtualAccount(fullName || 'Member', dto.phone, dto.email);
+      const wallet = await this.interswitch.createMemberWallet(
+        fullName,
+        dto.phone,
+        dto.email ?? `member-${member.id}@omohealth.ng`,
+      );
+      walletId = wallet.walletId;
+      walletAccountNumber = wallet.settlementAccountNumber;
+      await this.prisma.member.update({
+        where: { id: member.id },
+        data: { walletId, walletAccountNumber },
+      });
+      this.logger.log(`Member wallet created: ${walletId} for member ${member.id}`);
+    } catch (err) {
+      this.logger.warn(`Member wallet creation failed: ${err?.message}`);
+    }
+
+    // ── Step 6: Create Wema Bank virtual account (for dues collection) ──
+    let bankAccountNumber: string | null = null;
+    let bankName = 'Wema Bank';
+    try {
+      const va = await this.interswitch.createVirtualAccount(fullName, dto.phone, undefined, dto.email);
+      bankAccountNumber = va.accountNumber;
+      bankName = va.bankName ?? 'Wema Bank';
       await this.prisma.wallet.create({
         data: {
           memberId: member.id,
@@ -77,17 +112,21 @@ export class MembersService {
           balance: 0,
         },
       });
-      walletRef = `${va.bankName} — ${va.accountNumber}`;
-    } catch {
-      // Virtual account creation may fail in sandbox — member is still enrolled
+      this.logger.log(`Wema Bank VA created: ${bankAccountNumber} for member ${member.id}`);
+    } catch (err) {
+      this.logger.warn(`Virtual account creation failed: ${err?.message}`);
     }
 
-    // Send onboarding SMS
+    // ── Step 7: Send onboarding SMS with the Wema Bank account number ──
+    const paymentDetails = bankAccountNumber
+      ? `Pay your monthly dues into: ${bankName} - ${bankAccountNumber}`
+      : null;
+
     await this.termii.sendOnboarding(
       dto.phone,
-      fullName || 'Member',
+      fullName,
       association.plan,
-      walletRef ?? undefined,
+      paymentDetails ?? undefined,
     );
 
     return {
@@ -95,8 +134,15 @@ export class MembersService {
       name: fullName,
       phone: member.phone,
       status: member.status,
-      walletRef,
-      message: 'Member enrolled successfully. Onboarding SMS sent.',
+      // Interswitch merchant wallet
+      walletId: walletId ?? null,
+      walletAccountNumber: walletAccountNumber ?? null,
+      // Wema Bank virtual account (for dues payment)
+      bankAccount: {
+        accountNumber: bankAccountNumber,
+        bankName,
+      },
+      message: 'Member enrolled. Onboarding SMS sent with payment account details.',
     };
   }
 
@@ -104,17 +150,14 @@ export class MembersService {
     const member = await this.prisma.member.findUnique({
       where: { id: memberId },
       include: {
-        association: { select: { name: true, plan: true, poolBalance: true } },
+        association: { select: { name: true, plan: true, poolBalance: true, monthlyDues: true, coverageLimit: true } },
+        wallet: { select: { interswitchRef: true, balance: true } },
       },
     });
     if (!member) throw new NotFoundException('Member not found');
 
-    const coverageLimits: Record<string, number> = {
-      BRONZE: 100000,
-      SILVER: 250000,
-      GOLD: 500000,
-    };
-    const limit = coverageLimits[member.association.plan] ?? 100000;
+    const planLimits: Record<string, number> = { BRONZE: 100000, SILVER: 250000, GOLD: 500000 };
+    const limit = member.association.coverageLimit ?? planLimits[member.association.plan] ?? 100000;
 
     return {
       memberId: member.id,
@@ -123,8 +166,16 @@ export class MembersService {
       status: member.status,
       plan: member.association.plan,
       association: member.association.name,
-      coverageUsed: member.coverageUsedThisYear,
+      monthlyDues: member.association.monthlyDues ?? null,
+      // Wallet info
+      walletId: member.walletId ?? null,
+      walletAccountNumber: member.walletAccountNumber ?? null,
+      bankAccount: member.wallet
+        ? { accountNumber: member.wallet.interswitchRef, balance: member.wallet.balance }
+        : null,
+      // Coverage
       coverageLimit: limit,
+      coverageUsed: member.coverageUsedThisYear,
       coverageRemaining: Math.max(0, limit - member.coverageUsedThisYear),
       enrolledAt: member.enrolledAt,
     };

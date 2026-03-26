@@ -53,10 +53,10 @@ export class PaymentsController {
 
   // ─── Info ──────────────────────────────────────────────────────────────────
 
-  /** Pool wallet balance — Iyaloja only */
+  /** Pool wallet balance + member wallets — Iyaloja only */
   @Get('wallet-balance')
-  getWalletBalance() {
-    return this.paymentsService.getWalletBalance();
+  getWalletBalance(@Request() req) {
+    return this.paymentsService.getWalletBalance(req.user.sub);
   }
 
   /** Bank code list for hospital registration dropdown */

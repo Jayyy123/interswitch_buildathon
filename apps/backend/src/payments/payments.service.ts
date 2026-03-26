@@ -57,6 +57,7 @@ export class PaymentsService {
         memberId: member.id,
         hospitalName: dto.hospitalName,
         hospitalAccount: dto.hospitalAccount,
+        hospitalBankCode: dto.hospitalBankCode,
         billAmount: dto.billAmount,
         billPhotoUrl: dto.billPhotoUrl,
         description: dto.description,
@@ -112,9 +113,12 @@ export class PaymentsService {
       data: { status: ClaimStatus.APPROVED, approvedAmount },
     });
 
-    // Payout to hospital if account details are provided
+    // Payout to hospital via merchant wallet.
+    // NOTE: transferFundsViaSva() is also implemented (correct MAC confirmed) but SVA creds
+    // lack TransferFunds scope in QA — contact Interswitch to enable it on the credentials.
+    // Wallet payout requires INTERSWITCH_WALLET_PIN env var.
     let interswitchRef: string | null = null;
-    if (claim.hospitalAccount) {
+    if (claim.hospitalAccount && claim.hospitalBankCode) {
       try {
         const payout = await this.interswitch.payoutToHospital(
           claimId,
@@ -122,7 +126,7 @@ export class PaymentsService {
           claim.member.name ?? 'Member',
           claim.hospitalName,
           claim.hospitalAccount,
-          '011', // Default GTB — would come from hospital registration in production
+          claim.hospitalBankCode,
         );
         interswitchRef = payout.transactionReference;
 
@@ -166,11 +170,60 @@ export class PaymentsService {
 
   // ─── Wallet & Banks ───────────────────────────────────────────────────────
 
-  async getWalletBalance() {
-    return this.interswitch.getWalletBalance();
+  /**
+   * Returns the iyaloja's association pool balance from DB,
+   * plus a list of member wallets. (api-gateway is IP-restricted in QA;
+   * the DB poolBalance is the authoritative source updated on each verified payment.)
+   */
+  async getWalletBalance(userId: string) {
+    const association = await this.prisma.association.findFirst({
+      where: { userId },
+      include: {
+        members: {
+          select: {
+            id: true, name: true, phone: true,
+            walletId: true, walletAccountNumber: true,
+            wallet: { select: { interswitchRef: true, balance: true } },
+          },
+        },
+      },
+    });
+
+    if (!association) {
+      return {
+        poolBalance: 0,
+        poolWalletId: null,
+        poolAccountNumber: null,
+        memberCount: 0,
+        members: [],
+      };
+    }
+
+    return {
+      associationId: association.id,
+      associationName: association.name,
+      plan: association.plan,
+      // Pool wallet
+      poolBalance: association.poolBalance,
+      poolWalletId: association.walletId,
+      poolAccountNumber: association.walletAccountNumber,
+      // Members and their wallets
+      memberCount: association.members.length,
+      members: association.members.map((m) => ({
+        memberId: m.id,
+        name: m.name,
+        phone: m.phone,
+        walletId: m.walletId,
+        walletAccountNumber: m.walletAccountNumber,
+        bankAccount: m.wallet ? {
+          accountNumber: m.wallet.interswitchRef,
+          balance: m.wallet.balance,
+        } : null,
+      })),
+    };
   }
 
-  async getBankCodes() {
+  getBankCodes() {
     return this.interswitch.getBankCodes();
   }
 }

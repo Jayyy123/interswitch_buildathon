@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateAssociationDto {
   @IsString()
@@ -12,6 +12,14 @@ export class CreateAssociationDto {
   @IsString()
   @IsOptional()
   plan?: 'BRONZE' | 'SILVER' | 'GOLD';
+
+  @IsNumber()
+  @IsOptional()
+  monthlyDues?: number;
+
+  @IsNumber()
+  @IsOptional()
+  coverageLimit?: number;
 }
 
 export class VerifyPaymentDto {
