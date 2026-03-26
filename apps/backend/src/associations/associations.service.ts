@@ -126,21 +126,50 @@ export class AssociationsService {
     };
   }
 
-  async listAssociations(userId: string) {
-    const associations = await this.prisma.association.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-    });
+  /**
+   * GET /associations
+   * - IYALOJA → returns associations they own (created)
+   * - MEMBER   → returns the association(s) they are enrolled in
+   *              (matched via their User.phone → Member.phone)
+   * - CLINIC_ADMIN → returns [] (no association ownership)
+   */
+  async listAssociations(userId: string, role: string) {
+    if (role === 'IYALOJA') {
+      const associations = await this.prisma.association.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+      });
+      return Promise.all(
+        associations.map(async (a) => {
+          const memberCount = await this.prisma.member.count({ where: { associationId: a.id } });
+          return { ...a, memberCount, userRole: 'OWNER' };
+        }),
+      );
+    }
 
-    // Attach member count to each
-    const withCounts = await Promise.all(
-      associations.map(async (a) => {
-        const memberCount = await this.prisma.member.count({ where: { associationId: a.id } });
-        return { ...a, memberCount };
-      }),
-    );
+    if (role === 'MEMBER') {
+      // Look up the user's phone, then find any member records with that phone
+      const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { phone: true } });
+      if (!user) return [];
+      // Normalise: strip +234 → 0XXXXXXXXX for matching
+      const localPhone = user.phone.startsWith('+234') ? '0' + user.phone.slice(4) : user.phone;
+      const members = await this.prisma.member.findMany({
+        where: { phone: { in: [user.phone, localPhone] } },
+        include: {
+          association: true,
+        },
+      });
+      return members.map((m) => ({
+        ...m.association,
+        memberStatus: m.status,
+        memberId: m.id,
+        walletId: m.walletId,
+        walletAccountNumber: m.walletAccountNumber,
+        userRole: 'MEMBER',
+      }));
+    }
 
-    return withCounts;
+    return [];
   }
 
   async verifyAndCreditPool(id: string, dto: VerifyPaymentDto, userId: string) {

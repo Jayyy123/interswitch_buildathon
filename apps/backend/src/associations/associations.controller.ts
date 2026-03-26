@@ -17,10 +17,10 @@ export class AssociationsController {
     return this.associationsService.createAssociation(dto, req.user.sub);
   }
 
-  /** GET /associations — List all associations owned by this Iyaloja */
+  /** GET /associations — Role-aware: Iyaloja gets owned, Member gets enrolled */
   @Get()
   list(@Request() req) {
-    return this.associationsService.listAssociations(req.user.sub);
+    return this.associationsService.listAssociations(req.user.sub, req.user.role);
   }
 
   /** GET /associations/:id — Full dashboard (members + claims + pool balance) */
