@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Building2 } from 'lucide-react';
 
+import { OnboardingSaveLink } from '@/components/auth/onboarding-save-link';
 import { SectionCard } from '@/components/section-card';
 import { buttonVariants } from '@/components/ui/button-variants';
 
@@ -63,12 +64,14 @@ export default async function AssociationSetupPage({ params }: AssociationSetupP
         Initial pool funding uses Interswitch checkout in production.
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        <Link
+        <OnboardingSaveLink
           href={`/association/${id}`}
+          userId={id}
+          role="IYALOJA"
           className={buttonVariants({ className: 'justify-center' })}
         >
           Save Setup
-        </Link>
+        </OnboardingSaveLink>
         <Link
           href={`/association/${id}/wallet`}
           className={buttonVariants({ variant: 'outline', className: 'justify-center' })}

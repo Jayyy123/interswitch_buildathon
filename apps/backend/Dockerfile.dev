@@ -1,0 +1,17 @@
+FROM node:20.19-alpine
+RUN corepack enable && corepack prepare pnpm@latest --activate
+WORKDIR /app
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
+COPY apps/backend/package.json ./apps/backend/
+RUN pnpm install --frozen-lockfile
+
+COPY apps/backend ./apps/backend
+
+WORKDIR /app/apps/backend
+RUN pnpm run prisma:generate
+
+EXPOSE 3000
+
+# migrate deploy applies existing SQL migrations only (never creates new ones)
+CMD ["sh", "-c", "pnpm exec prisma migrate deploy && pnpm run start:dev"]

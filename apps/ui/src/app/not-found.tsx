@@ -3,7 +3,7 @@ import { Ghost } from 'lucide-react';
 
 import { buttonVariants } from '@/components/ui/button-variants';
 
-export default function NotFoundPage() {
+const NotFoundPage = () => {
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-14 text-slate-100 sm:px-6">
       <div className="mx-auto w-full max-w-xl rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
@@ -29,4 +29,6 @@ export default function NotFoundPage() {
       </div>
     </main>
   );
-}
+};
+
+export default NotFoundPage;

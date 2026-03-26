@@ -1,35 +1,57 @@
+'use client';
+
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { type ReactNode } from 'react';
-import { type LucideIcon, Building2, HeartPulse, LogOut } from 'lucide-react';
+import {
+  Building2,
+  ClipboardPlus,
+  CreditCard,
+  FileClock,
+  HandCoins,
+  HeartPulse,
+  House,
+  LogOut,
+  Settings,
+  Users,
+} from 'lucide-react';
 
 import { buttonVariants } from '@/components/ui/button-variants';
+import { useAuth } from '@/contexts/auth-context';
 import { cn } from '@/lib/utils';
 
 type NavItem = {
   label: string;
   href: string;
-  icon: LucideIcon;
+  icon: 'home' | 'members' | 'claims' | 'wallet' | 'new-claim' | 'setup';
 };
 
 type PortalShellProps = {
   role: 'Association' | 'Clinic';
   title: string;
   subtitle?: string;
-  logoutHref: string;
+  loginPath: string;
   navItems: NavItem[];
   children: ReactNode;
 };
 
-export function PortalShell({
+export const PortalShell = ({
   role,
   title,
   subtitle,
-  logoutHref,
+  loginPath,
   navItems,
   children,
-}: PortalShellProps) {
+}: PortalShellProps) => {
+  const router = useRouter();
+  const { logout } = useAuth();
   const roleIcon = role === 'Association' ? Building2 : HeartPulse;
   const RoleIcon = roleIcon;
+
+  const handleLogout = () => {
+    logout();
+    router.push(loginPath);
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -44,8 +66,9 @@ export function PortalShell({
               <h1 className="mt-2 text-2xl font-semibold">{title}</h1>
               {subtitle ? <p className="mt-1 text-sm text-slate-300">{subtitle}</p> : null}
             </div>
-            <Link
-              href={logoutHref}
+            <button
+              type="button"
+              onClick={handleLogout}
               className={buttonVariants({
                 variant: 'outline',
                 size: 'sm',
@@ -55,7 +78,7 @@ export function PortalShell({
             >
               <LogOut className="size-4" />
               Log out
-            </Link>
+            </button>
           </div>
         </header>
         <main className="space-y-6">{children}</main>
@@ -69,10 +92,19 @@ export function PortalShell({
       </nav>
     </div>
   );
-}
+};
 
-function NavButton({ item }: { item: NavItem }) {
-  const Icon = item.icon;
+const NavButton = ({ item }: { item: NavItem }) => {
+  const iconMap = {
+    home: House,
+    members: Users,
+    claims: HandCoins,
+    wallet: CreditCard,
+    'new-claim': ClipboardPlus,
+    setup: Settings,
+  } as const;
+  const Icon =
+    item.icon === 'claims' && item.href.startsWith('/clinic/') ? FileClock : iconMap[item.icon];
 
   return (
     <Link
@@ -86,4 +118,4 @@ function NavButton({ item }: { item: NavItem }) {
       {item.label}
     </Link>
   );
-}
+};

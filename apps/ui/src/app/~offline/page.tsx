@@ -1,4 +1,4 @@
-export default function OfflinePage() {
+const OfflinePage = () => {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center px-6 text-center">
       <h1 className="text-2xl font-semibold tracking-tight">You are offline</h1>
@@ -8,4 +8,6 @@ export default function OfflinePage() {
       </p>
     </main>
   );
-}
+};
+
+export default OfflinePage;

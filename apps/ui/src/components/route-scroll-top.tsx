@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 
-export function RouteScrollTop() {
+export const RouteScrollTop = () => {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -12,4 +12,4 @@ export function RouteScrollTop() {
   }, [pathname, searchParams]);
 
   return null;
-}
+};

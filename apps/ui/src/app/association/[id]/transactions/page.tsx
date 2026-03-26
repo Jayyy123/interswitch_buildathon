@@ -3,7 +3,7 @@ import { ArrowLeftRight } from 'lucide-react';
 import { TransactionsManagementTable } from '@/components/association/transactions-management-table';
 import { SectionCard } from '@/components/section-card';
 
-export default function AssociationTransactionsPage() {
+const AssociationTransactionsPage = () => {
   return (
     <SectionCard
       icon={ArrowLeftRight}
@@ -13,4 +13,6 @@ export default function AssociationTransactionsPage() {
       <TransactionsManagementTable />
     </SectionCard>
   );
-}
+};
+
+export default AssociationTransactionsPage;

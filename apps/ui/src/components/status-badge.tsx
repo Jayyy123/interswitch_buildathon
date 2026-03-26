@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 
-type StatusTone = 'green' | 'yellow' | 'red' | 'blue' | 'gray';
+export type StatusTone = 'green' | 'yellow' | 'red' | 'blue' | 'gray';
 
 const toneMap: Record<StatusTone, string> = {
   green: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/40',
@@ -15,7 +15,7 @@ type StatusBadgeProps = {
   tone?: StatusTone;
 };
 
-export function StatusBadge({ label, tone = 'gray' }: StatusBadgeProps) {
+export const StatusBadge = ({ label, tone = 'gray' }: StatusBadgeProps) => {
   return (
     <span
       className={cn(
@@ -26,4 +26,4 @@ export function StatusBadge({ label, tone = 'gray' }: StatusBadgeProps) {
       {label}
     </span>
   );
-}
+};

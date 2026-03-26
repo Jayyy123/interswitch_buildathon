@@ -1,6 +1,4 @@
 import { type ReactNode } from 'react';
-import { CreditCard, HandCoins, House, Users } from 'lucide-react';
-import { notFound } from 'next/navigation';
 
 import { PortalShell } from '@/components/portal-shell';
 
@@ -14,22 +12,21 @@ export default async function AssociationScopedLayout({
   params,
 }: AssociationScopedLayoutProps) {
   const { id } = await params;
-  if (id !== 'assoc-001') notFound();
   const base = `/association/${id}`;
 
   const associationNav = [
-    { label: 'Home', href: base, icon: House },
-    { label: 'Members', href: `${base}/members`, icon: Users },
-    { label: 'Claims', href: `${base}/claims`, icon: HandCoins },
-    { label: 'Wallet', href: `${base}/wallet`, icon: CreditCard },
+    { label: 'Home', href: base, icon: 'home' as const },
+    { label: 'Members', href: `${base}/members`, icon: 'members' as const },
+    { label: 'Claims', href: `${base}/claims`, icon: 'claims' as const },
+    { label: 'Wallet', href: `${base}/wallet`, icon: 'wallet' as const },
   ];
 
   return (
     <PortalShell
       role="Association"
-      title="Alausa Traders Association"
-      subtitle={`Association ID: ${id} · Plan: Gold`}
-      logoutHref="/login/association"
+      title="Association portal"
+      subtitle={`Association ID: ${id}`}
+      loginPath="/login/association"
       navItems={associationNav}
     >
       {children}
