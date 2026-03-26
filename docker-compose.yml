@@ -19,14 +19,14 @@ services:
   backend:
     build:
       context: .
-      dockerfile: apps/backend/Dockerfile.dev
+      dockerfile: apps/backend/Dockerfile
     restart: unless-stopped
     ports:
       - "3000:3000"
     env_file:
       - apps/backend/.env
     environment:
-      DATABASE_URL: postgresql://postgres.xeqisokaznkxmgqdqxrf:aZZO7q2N0q1KqCP1@aws-1-eu-west-2.pooler.supabase.com:5432/postgres
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/hackathon_db?schema=public
       NODE_ENV: development
     # depends_on:
     #   postgres:
@@ -38,7 +38,7 @@ services:
   ui:
     build:
       context: .
-      dockerfile: apps/ui/Dockerfile.dev
+      dockerfile: apps/ui/Dockerfile
     restart: unless-stopped
     ports:
       - "3001:3000"
