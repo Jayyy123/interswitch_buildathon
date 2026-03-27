@@ -25,10 +25,10 @@ import { WalletProvisionModule } from './wallet-provision/wallet-provision.modul
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         connection: {
-          url:                  config.get<string>('REDIS_URL', 'redis://localhost:6379'),
-          maxRetriesPerRequest: null,   // required for BullMQ 5.x workers
-          enableReadyCheck:     false,  // required for BullMQ 5.x — prevents "Connection is closed" crash
-          retryStrategy:        (times: number) => Math.min(times * 500, 5000),
+          url: config.get<string>('REDIS_URL', 'redis://localhost:6379'),
+          maxRetriesPerRequest: null, // required for BullMQ 5.x workers
+          enableReadyCheck: false, // required for BullMQ 5.x — prevents "Connection is closed" crash
+          retryStrategy: (times: number) => Math.min(times * 500, 5000),
         },
         defaultJobOptions: {
           attempts: 5,

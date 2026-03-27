@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 
-import { PortalShell } from '@/components/portal-shell';
+import { ClinicPortalShell } from '@/components/clinic/clinic-portal-shell';
 
 type ClinicScopedLayoutProps = {
   children: ReactNode;
@@ -19,14 +19,8 @@ export default async function ClinicScopedLayout({ children, params }: ClinicSco
   ];
 
   return (
-    <PortalShell
-      role="Clinic"
-      title="Clinic portal"
-      subtitle={`Clinic ID: ${id} · Fast member lookup enabled`}
-      loginPath="/login/clinic"
-      navItems={clinicNav}
-    >
+    <ClinicPortalShell clinicId={id} navItems={clinicNav}>
       {children}
-    </PortalShell>
+    </ClinicPortalShell>
   );
 }

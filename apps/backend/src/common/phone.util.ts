@@ -55,13 +55,17 @@ export function toLocal(raw: string): string {
  */
 export function phoneVariants(raw: string): string[] {
   const phone = parseNigerianPhone(raw);
-  const e164     = phone.format('E.164');
+  const e164 = phone.format('E.164');
   const national = phone.formatNational().replace(/\s/g, '');
   return Array.from(new Set([e164, national, raw.trim()]));
 }
 
 /** Non-throwing structural validation. */
 export function isValidNigerianPhone(raw: string): boolean {
-  try { parseNigerianPhone(raw); return true; }
-  catch { return false; }
+  try {
+    parseNigerianPhone(raw);
+    return true;
+  } catch {
+    return false;
+  }
 }

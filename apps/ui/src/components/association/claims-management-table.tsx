@@ -7,13 +7,14 @@ import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 
 import { StatusBadge } from '@/components/status-badge';
 import { buttonVariants } from '@/components/ui/button-variants';
-import { ApiError, getClaims } from '@/lib/api';
+import { ApiError, getAssociationClaims } from '@/lib/api';
 import { claimStatusLabel, claimStatusTone, formatNgn } from '@/lib/claim-ui';
 import type { ClaimStatusApi } from '@/lib/auth-types';
 
 type Row = {
   id: string;
   memberId: string;
+  memberName: string;
   hospitalName: string;
   amount: string;
   status: ClaimStatusApi;
@@ -32,15 +33,21 @@ export const ClaimsManagementTable = ({ associationId }: ClaimsManagementTablePr
   const [page, setPage] = useState(1);
 
   const claimsQuery = useQuery({
-    queryKey: ['claims'],
-    queryFn: getClaims,
+    queryKey: ['association-claims', associationId, page, statusFilter],
+    queryFn: () =>
+      getAssociationClaims(associationId, {
+        page,
+        limit: PAGE_SIZE,
+        status: statusFilter === 'all' ? undefined : statusFilter,
+      }),
   });
 
   const rows = useMemo<Row[]>(() => {
-    const data = claimsQuery.data ?? [];
+    const data = claimsQuery.data?.data ?? [];
     const mappedRows = data.map((c) => ({
       id: c.id,
-      memberId: c.memberId,
+      memberId: c.member.id,
+      memberName: c.member.name,
       hospitalName: c.hospitalName,
       amount: formatNgn(c.billAmount),
       status: c.status as ClaimStatusApi,
@@ -62,9 +69,9 @@ export const ClaimsManagementTable = ({ associationId }: ClaimsManagementTablePr
     });
   }, [search, statusFilter, rows]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil((claimsQuery.data?.total ?? 0) / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const paged = filtered;
 
   return (
     <div className="space-y-4">
@@ -137,7 +144,10 @@ export const ClaimsManagementTable = ({ associationId }: ClaimsManagementTablePr
                   paged.map((claim) => (
                     <tr key={claim.id} className="border-t border-white/10">
                       <td className="py-3 font-medium text-white">{claim.id.slice(0, 8)}…</td>
-                      <td className="font-mono text-xs">{claim.memberId.slice(0, 8)}…</td>
+                      <td className="text-xs">
+                        <p className="font-medium text-white">{claim.memberName || '-'}</p>
+                        <p className="font-mono text-slate-400">{claim.memberId.slice(0, 8)}...</p>
+                      </td>
                       <td>{claim.hospitalName}</td>
                       <td>{claim.amount}</td>
                       <td>{claim.createdAt}</td>
@@ -165,7 +175,7 @@ export const ClaimsManagementTable = ({ associationId }: ClaimsManagementTablePr
           <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-xs text-slate-300">
             <p>
               Showing {paged.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1}-
-              {(safePage - 1) * PAGE_SIZE + paged.length} of {filtered.length}
+              {(safePage - 1) * PAGE_SIZE + paged.length} of {claimsQuery.data?.total ?? 0}
             </p>
             <div className="flex items-center gap-2">
               <button

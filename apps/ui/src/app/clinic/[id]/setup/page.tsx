@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Building2 } from 'lucide-react';
 
@@ -9,10 +9,12 @@ import { buttonVariants } from '@/components/ui/button-variants';
 import { ApiError, getClinicSetup, saveClinicSetup } from '@/lib/api';
 
 export default function ClinicSetupPage() {
-  const [name, setName] = useState('');
-  const [address, setAddress] = useState('');
-  const [bankAccount, setBankAccount] = useState('');
-  const [bankCode, setBankCode] = useState('');
+  const [draft, setDraft] = useState<{
+    name?: string;
+    address?: string;
+    bankAccount?: string;
+    bankCode?: string;
+  }>({});
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState('');
 
@@ -20,15 +22,10 @@ export default function ClinicSetupPage() {
     queryKey: ['clinic-setup'],
     queryFn: getClinicSetup,
   });
-
-  useEffect(() => {
-    if (setupQuery.data) {
-      setName(setupQuery.data.name ?? '');
-      setAddress(setupQuery.data.address ?? '');
-      setBankAccount(setupQuery.data.bankAccount ?? '');
-      setBankCode(setupQuery.data.bankCode ?? '');
-    }
-  }, [setupQuery.data]);
+  const name = draft.name ?? setupQuery.data?.name ?? '';
+  const address = draft.address ?? setupQuery.data?.address ?? '';
+  const bankAccount = draft.bankAccount ?? setupQuery.data?.bankAccount ?? '';
+  const bankCode = draft.bankCode ?? setupQuery.data?.bankCode ?? '';
 
   const mutation = useMutation({
     mutationFn: saveClinicSetup,
@@ -70,7 +67,7 @@ export default function ClinicSetupPage() {
               className="w-full rounded-lg border border-white/15 bg-slate-900 px-3 py-2"
               placeholder="HealthPoint Clinic"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
               required
             />
           </label>
@@ -81,7 +78,7 @@ export default function ClinicSetupPage() {
               className="w-full rounded-lg border border-white/15 bg-slate-900 px-3 py-2"
               placeholder="12 Medical Avenue, Ikeja"
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              onChange={(e) => setDraft((prev) => ({ ...prev, address: e.target.value }))}
             />
           </label>
           <label className="text-sm">
@@ -91,7 +88,7 @@ export default function ClinicSetupPage() {
               className="w-full rounded-lg border border-white/15 bg-slate-900 px-3 py-2"
               placeholder="0099553344"
               value={bankAccount}
-              onChange={(e) => setBankAccount(e.target.value)}
+              onChange={(e) => setDraft((prev) => ({ ...prev, bankAccount: e.target.value }))}
             />
           </label>
           <label className="text-sm">
@@ -101,7 +98,7 @@ export default function ClinicSetupPage() {
               className="w-full rounded-lg border border-white/15 bg-slate-900 px-3 py-2"
               placeholder="011 (First Bank)"
               value={bankCode}
-              onChange={(e) => setBankCode(e.target.value)}
+              onChange={(e) => setDraft((prev) => ({ ...prev, bankCode: e.target.value }))}
             />
           </label>
 

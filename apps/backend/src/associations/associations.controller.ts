@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Patch,
   Param,
   Post,
   Query,
@@ -17,6 +18,7 @@ import {
   EnrollMembersDto,
   MembersQueryDto,
   TransactionsQueryDto,
+  UpdateAssociationDto,
   VerifyPaymentDto,
 } from './dto/associations.dto';
 
@@ -33,13 +35,20 @@ export class AssociationsController {
   /** POST /associations — Iyaloja creates association + auto-creates pool wallet */
   @Post()
   create(@Body() dto: CreateAssociationDto, @Request() req) {
-    return this.associationsService.createAssociation(dto, req.user.userId, req.user.phone);
+    return this.associationsService.createAssociation(
+      dto,
+      req.user.userId,
+      req.user.phone,
+    );
   }
 
   /** GET /associations — Role-aware list: Iyaloja gets owned, Member gets enrolled */
   @Get()
   list(@Request() req) {
-    return this.associationsService.listAssociations(req.user.userId, req.user.role);
+    return this.associationsService.listAssociations(
+      req.user.userId,
+      req.user.role,
+    );
   }
 
   // ─── Dashboard & sub-pages ────────────────────────────────────────────────
@@ -54,6 +63,16 @@ export class AssociationsController {
   @Get(':id/wallet')
   getWallet(@Param('id') id: string, @Request() req) {
     return this.associationsService.getWallet(id, req.user.userId);
+  }
+
+  /** PATCH /associations/:id — update association profile + pricing */
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateAssociationDto,
+    @Request() req,
+  ) {
+    return this.associationsService.updateAssociation(id, dto, req.user.userId);
   }
 
   // ─── Members ──────────────────────────────────────────────────────────────
@@ -122,6 +141,16 @@ export class AssociationsController {
     return this.associationsService.getClaims(id, req.user.userId, query);
   }
 
+  /** GET /associations/:id/claims/:claimId — single claim detail */
+  @Get(':id/claims/:claimId')
+  getClaimById(
+    @Param('id') id: string,
+    @Param('claimId') claimId: string,
+    @Request() req,
+  ) {
+    return this.associationsService.getClaimById(id, claimId, req.user.userId);
+  }
+
   // ─── Transactions ─────────────────────────────────────────────────────────
 
   /** GET /associations/:id/transactions — paginated contributions, filterable by source + week */
@@ -143,6 +172,10 @@ export class AssociationsController {
     @Body() dto: VerifyPaymentDto,
     @Request() req,
   ) {
-    return this.associationsService.verifyAndCreditPool(id, dto, req.user.userId);
+    return this.associationsService.verifyAndCreditPool(
+      id,
+      dto,
+      req.user.userId,
+    );
   }
 }

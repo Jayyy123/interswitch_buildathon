@@ -12,12 +12,16 @@ import { toLocal } from '../common/phone.util';
 import { InterswitchService } from '../interswitch/interswitch.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TermiiService } from '../termii/termii.service';
-import { PROVISION_POOL_WALLET, WALLET_PROVISION_QUEUE } from '../wallet-provision/wallet-provision.queue';
+import {
+  PROVISION_POOL_WALLET,
+  WALLET_PROVISION_QUEUE,
+} from '../wallet-provision/wallet-provision.queue';
 import {
   ClaimsQueryDto,
   CreateAssociationDto,
   MembersQueryDto,
   TransactionsQueryDto,
+  UpdateAssociationDto,
   VerifyPaymentDto,
 } from './dto/associations.dto';
 
@@ -26,13 +30,13 @@ import {
 const PLAN_WEEKLY_AMOUNTS: Record<string, number> = {
   BRONZE: 200,
   SILVER: 400,
-  GOLD:   700,
+  GOLD: 700,
 };
 
 const PLAN_COVERAGE_LIMITS: Record<string, number> = {
   BRONZE: 75_000,
   SILVER: 150_000,
-  GOLD:   300_000,
+  GOLD: 300_000,
 };
 
 function paginate(page?: string, limit?: string) {
@@ -52,12 +56,18 @@ export class AssociationsService {
     @InjectQueue(WALLET_PROVISION_QUEUE)
     private readonly walletQueue: Queue,
   ) {
-    walletQueue.on('error', (err) => this.logger.warn('Wallet queue error:', err.message));
+    walletQueue.on('error', (err) =>
+      this.logger.warn('Wallet queue error:', err.message),
+    );
   }
 
   // ─── Create association ────────────────────────────────────────────────────
 
-  async createAssociation(dto: CreateAssociationDto, userId: string, jwtPhone?: string) {
+  async createAssociation(
+    dto: CreateAssociationDto,
+    userId: string,
+    jwtPhone?: string,
+  ) {
     let user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user && jwtPhone) {
       user = await this.prisma.user.findUnique({ where: { phone: jwtPhone } });
@@ -67,7 +77,8 @@ export class AssociationsService {
         data: { phone: jwtPhone, role: UserRole.IYALOJA },
       });
     }
-    if (!user) throw new UnauthorizedException('Invalid session. Please login again.');
+    if (!user)
+      throw new UnauthorizedException('Invalid session. Please login again.');
 
     const association = await this.prisma.association.create({
       data: {
@@ -82,24 +93,35 @@ export class AssociationsService {
     });
 
     // Enqueue pool wallet provisioning via BullMQ — retries on ETIMEDOUT automatically
-    const assocDigits = association.id.replace(/[^0-9]/g, '').padEnd(7, '0').slice(0, 7);
-    const poolPhone   = `0803${assocDigits}`;
+    const assocDigits = association.id
+      .replace(/[^0-9]/g, '')
+      .padEnd(7, '0')
+      .slice(0, 7);
+    const poolPhone = `0803${assocDigits}`;
     try {
       await this.walletQueue.add(
         PROVISION_POOL_WALLET,
         {
           associationId: association.id,
-          name:  `${dto.name} Pool`,
+          name: `${dto.name} Pool`,
           phone: poolPhone,
           email: `pool-${association.id}@omohealth.ng`,
         },
-        { jobId: `pool-wallet-${association.id}`, removeOnComplete: true, removeOnFail: 100 },
+        {
+          jobId: `pool-wallet-${association.id}`,
+          removeOnComplete: true,
+          removeOnFail: 100,
+        },
       );
     } catch (err) {
-      this.logger.warn(`Pool wallet job not queued (Redis unavailable): ${err?.message}`);
+      this.logger.warn(
+        `Pool wallet job not queued (Redis unavailable): ${err?.message}`,
+      );
     }
 
-    return this.prisma.association.findUnique({ where: { id: association.id } });
+    return this.prisma.association.findUnique({
+      where: { id: association.id },
+    });
   }
 
   // ─── List associations (role-aware) ───────────────────────────────────────
@@ -109,8 +131,16 @@ export class AssociationsService {
       const associations = await this.prisma.association.findMany({
         where: { userId },
         select: {
-          id: true, name: true, plan: true, walletId: true,
-          walletAccountNumber: true, poolBalance: true, createdAt: true,
+          id: true,
+          name: true,
+          cacNumber: true,
+          plan: true,
+          monthlyDues: true,
+          coverageLimit: true,
+          walletId: true,
+          walletAccountNumber: true,
+          poolBalance: true,
+          createdAt: true,
           _count: { select: { members: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -133,9 +163,18 @@ export class AssociationsService {
       const members = await this.prisma.member.findMany({
         where: { phone: { in: [user.phone, localPhone] } },
         select: {
-          id: true, status: true, walletId: true, walletAccountNumber: true,
+          id: true,
+          status: true,
+          walletId: true,
+          walletAccountNumber: true,
           association: {
-            select: { id: true, name: true, plan: true, poolBalance: true, walletId: true },
+            select: {
+              id: true,
+              name: true,
+              plan: true,
+              poolBalance: true,
+              walletId: true,
+            },
           },
         },
       });
@@ -157,15 +196,22 @@ export class AssociationsService {
   async getDashboard(id: string, userId: string) {
     const association = await this._ownerOrThrow(id, userId);
 
-    const [activeCount, pausedCount, flaggedCount, totalPaidOut] = await Promise.all([
-      this.prisma.member.count({ where: { associationId: id, status: 'ACTIVE' } }),
-      this.prisma.member.count({ where: { associationId: id, status: 'PAUSED' } }),
-      this.prisma.member.count({ where: { associationId: id, consecutiveMissedPayments: { gte: 3 } } }),
-      this.prisma.claim.aggregate({
-        where: { associationId: id, status: 'PAID' },
-        _sum: { approvedAmount: true },
-      }),
-    ]);
+    const [activeCount, pausedCount, flaggedCount, totalPaidOut] =
+      await Promise.all([
+        this.prisma.member.count({
+          where: { associationId: id, status: 'ACTIVE' },
+        }),
+        this.prisma.member.count({
+          where: { associationId: id, status: 'PAUSED' },
+        }),
+        this.prisma.member.count({
+          where: { associationId: id, consecutiveMissedPayments: { gte: 3 } },
+        }),
+        this.prisma.claim.aggregate({
+          where: { associationId: id, status: 'PAID' },
+          _sum: { approvedAmount: true },
+        }),
+      ]);
 
     // Next Monday at 07:00 WAT
     const now = new Date();
@@ -190,7 +236,9 @@ export class AssociationsService {
 
   async getWallet(id: string, userId: string) {
     const association = await this._ownerOrThrow(id, userId);
-    const weeklyTarget = await this.prisma.member.count({ where: { associationId: id, status: 'ACTIVE' } });
+    const weeklyTarget = await this.prisma.member.count({
+      where: { associationId: id, status: 'ACTIVE' },
+    });
     const weeklyAmount = PLAN_WEEKLY_AMOUNTS[association.plan] ?? 400;
 
     // Contributions collected this current Monday-Sunday window
@@ -198,7 +246,11 @@ export class AssociationsService {
     monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
     monday.setHours(0, 0, 0, 0);
     const collectedThisWeek = await this.prisma.contribution.aggregate({
-      where: { associationId: id, status: 'SUCCESS', createdAt: { gte: monday } },
+      where: {
+        associationId: id,
+        status: 'SUCCESS',
+        createdAt: { gte: monday },
+      },
       _sum: { amount: true },
     });
 
@@ -210,6 +262,30 @@ export class AssociationsService {
       collectedThisWeek: collectedThisWeek._sum.amount ?? 0,
       weeklyAmountPerMember: weeklyAmount,
     };
+  }
+
+  async updateAssociation(
+    id: string,
+    dto: UpdateAssociationDto,
+    userId: string,
+  ) {
+    await this._ownerOrThrow(id, userId);
+
+    const data: Record<string, any> = {};
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.cacNumber !== undefined) data.cacNumber = dto.cacNumber;
+    if (dto.plan !== undefined) data.plan = dto.plan as PlanTier;
+    if (dto.monthlyDues !== undefined) data.monthlyDues = dto.monthlyDues;
+    if (dto.coverageLimit !== undefined) data.coverageLimit = dto.coverageLimit;
+
+    if (Object.keys(data).length === 0) {
+      throw new ForbiddenException('No fields to update.');
+    }
+
+    return this.prisma.association.update({
+      where: { id },
+      data,
+    });
   }
 
   // ─── Members list (paginated + filtered) ──────────────────────────────────
@@ -231,9 +307,15 @@ export class AssociationsService {
       this.prisma.member.findMany({
         where,
         select: {
-          id: true, name: true, phone: true, status: true,
-          walletStatus: true, walletId: true, walletAccountNumber: true,
-          consecutiveMissedPayments: true, enrolledAt: true,
+          id: true,
+          name: true,
+          phone: true,
+          status: true,
+          walletStatus: true,
+          walletId: true,
+          walletAccountNumber: true,
+          consecutiveMissedPayments: true,
+          enrolledAt: true,
         },
         orderBy: { enrolledAt: 'desc' },
         skip,
@@ -254,7 +336,13 @@ export class AssociationsService {
       where: { id: memberId, associationId: id },
       include: {
         contributions: {
-          select: { id: true, amount: true, status: true, source: true, week: true },
+          select: {
+            id: true,
+            amount: true,
+            status: true,
+            source: true,
+            week: true,
+          },
           orderBy: { week: 'desc' },
           take: 10,
         },
@@ -275,7 +363,12 @@ export class AssociationsService {
       walletStatus: member.walletStatus,
       walletId: member.walletId,
       walletAccountNumber: member.walletAccountNumber,
-      bankAccount: member.wallet ? { accountNumber: member.wallet.interswitchRef, balance: member.wallet.balance } : null,
+      bankAccount: member.wallet
+        ? {
+            accountNumber: member.wallet.interswitchRef,
+            balance: member.wallet.balance,
+          }
+        : null,
       coverageUsedThisYear: member.coverageUsedThisYear,
       consecutiveMissedPayments: member.consecutiveMissedPayments,
       contributionStreak: streak,
@@ -297,8 +390,13 @@ export class AssociationsService {
       this.prisma.claim.findMany({
         where,
         select: {
-          id: true, hospitalName: true, billAmount: true, approvedAmount: true,
-          status: true, description: true, createdAt: true,
+          id: true,
+          hospitalName: true,
+          billAmount: true,
+          approvedAmount: true,
+          status: true,
+          description: true,
+          createdAt: true,
           member: { select: { id: true, name: true, phone: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -311,9 +409,37 @@ export class AssociationsService {
     return { data, total, page, limit };
   }
 
+  async getClaimById(id: string, claimId: string, userId: string) {
+    const association = await this._ownerOrThrow(id, userId);
+    const claim = await this.prisma.claim.findFirst({
+      where: { id: claimId, associationId: id },
+      select: {
+        id: true,
+        hospitalName: true,
+        billAmount: true,
+        approvedAmount: true,
+        status: true,
+        description: true,
+        billPhotoUrl: true,
+        createdAt: true,
+        member: { select: { id: true, name: true, phone: true } },
+      },
+    });
+    if (!claim) throw new NotFoundException('Claim not found');
+
+    return {
+      ...claim,
+      association: { id: association.id, name: association.name },
+    };
+  }
+
   // ─── Transactions list (paginated + filtered) ─────────────────────────────
 
-  async getTransactions(id: string, userId: string, query: TransactionsQueryDto) {
+  async getTransactions(
+    id: string,
+    userId: string,
+    query: TransactionsQueryDto,
+  ) {
     await this._ownerOrThrow(id, userId);
     const { skip, take, page, limit } = paginate(query.page, query.limit);
 
@@ -321,7 +447,7 @@ export class AssociationsService {
     if (query.source) where.source = query.source;
     if (query.week) {
       const weekStart = new Date(query.week);
-      const weekEnd   = new Date(weekStart);
+      const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekStart.getDate() + 7);
       where.week = { gte: weekStart, lt: weekEnd };
     }
@@ -330,7 +456,12 @@ export class AssociationsService {
       this.prisma.contribution.findMany({
         where,
         select: {
-          id: true, amount: true, status: true, source: true, week: true, createdAt: true,
+          id: true,
+          amount: true,
+          status: true,
+          source: true,
+          week: true,
+          createdAt: true,
           member: { select: { id: true, name: true, phone: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -348,9 +479,15 @@ export class AssociationsService {
   async verifyAndCreditPool(id: string, dto: VerifyPaymentDto, userId: string) {
     const association = await this._ownerOrThrow(id, userId);
 
-    const result = await this.interswitch.verifyPayment(dto.transactionReference, dto.amountKobo);
+    const result = await this.interswitch.verifyPayment(
+      dto.transactionReference,
+      dto.amountKobo,
+    );
     if (!result.success) {
-      return { success: false, message: `Payment verification failed (code: ${result.responseCode})` };
+      return {
+        success: false,
+        message: `Payment verification failed (code: ${result.responseCode})`,
+      };
     }
 
     const amountNaira = dto.amountKobo / 100;
@@ -359,7 +496,11 @@ export class AssociationsService {
       data: { poolBalance: { increment: amountNaira } },
     });
 
-    return { success: true, credited: amountNaira, newBalance: association.poolBalance + amountNaira };
+    return {
+      success: true,
+      credited: amountNaira,
+      newBalance: association.poolBalance + amountNaira,
+    };
   }
 
   // ─── Private helpers ──────────────────────────────────────────────────────
@@ -368,7 +509,8 @@ export class AssociationsService {
     const association = await this.prisma.association.findFirst({
       where: { id, userId },
     });
-    if (!association) throw new NotFoundException('Association not found or not yours');
+    if (!association)
+      throw new NotFoundException('Association not found or not yours');
     return association;
   }
 

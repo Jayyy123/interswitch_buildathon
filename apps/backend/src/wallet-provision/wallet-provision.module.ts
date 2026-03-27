@@ -14,6 +14,6 @@ import { WALLET_PROVISION_QUEUE } from './wallet-provision.queue';
     TermiiModule,
   ],
   providers: [WalletProvisionProcessor],
-  exports:   [BullModule],  // exports the registered queue token so other modules can inject it
+  exports: [BullModule], // exports the registered queue token so other modules can inject it
 })
 export class WalletProvisionModule {}

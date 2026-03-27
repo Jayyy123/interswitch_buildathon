@@ -20,7 +20,7 @@ import { buttonVariants } from '@/components/ui/button-variants';
 import { useAuth } from '@/contexts/auth-context';
 import { cn } from '@/lib/utils';
 
-type NavItem = {
+export type NavItem = {
   label: string;
   href: string;
   icon: 'home' | 'members' | 'claims' | 'wallet' | 'new-claim' | 'setup';
@@ -31,6 +31,7 @@ type PortalShellProps = {
   title: string;
   subtitle?: string;
   loginPath: string;
+  settingsPath?: string;
   navItems: NavItem[];
   children: ReactNode;
 };
@@ -40,6 +41,7 @@ export const PortalShell = ({
   title,
   subtitle,
   loginPath,
+  settingsPath,
   navItems,
   children,
 }: PortalShellProps) => {
@@ -66,19 +68,34 @@ export const PortalShell = ({
               <h1 className="mt-2 text-2xl font-semibold">{title}</h1>
               {subtitle ? <p className="mt-1 text-sm text-slate-300">{subtitle}</p> : null}
             </div>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className={buttonVariants({
-                variant: 'outline',
-                size: 'sm',
-                className:
-                  'justify-center border-rose-400/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20',
-              })}
-            >
-              <LogOut className="size-4" />
-              Log out
-            </button>
+            <div className="flex items-center gap-2">
+              {settingsPath ? (
+                <Link
+                  href={settingsPath}
+                  className={buttonVariants({
+                    variant: 'outline',
+                    size: 'sm',
+                    className: 'justify-center',
+                  })}
+                >
+                  <Settings className="size-4" />
+                  Settings
+                </Link>
+              ) : null}
+              <button
+                type="button"
+                onClick={handleLogout}
+                className={buttonVariants({
+                  variant: 'outline',
+                  size: 'sm',
+                  className:
+                    'justify-center border-rose-400/40 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20',
+                })}
+              >
+                <LogOut className="size-4" />
+                Log out
+              </button>
+            </div>
           </div>
         </header>
         <main className="space-y-6">{children}</main>

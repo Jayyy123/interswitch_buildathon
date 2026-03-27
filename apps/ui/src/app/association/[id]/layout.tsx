@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react';
 
 import { AssociationAccessGuard } from '@/components/association/association-access-guard';
-import { PortalShell } from '@/components/portal-shell';
+import { AssociationPortalShell } from '@/components/association/association-portal-shell';
 
 type AssociationScopedLayoutProps = {
   children: ReactNode;
@@ -21,15 +21,9 @@ const AssociationScopedLayout = async ({ children, params }: AssociationScopedLa
 
   return (
     <AssociationAccessGuard associationId={id}>
-      <PortalShell
-        role="Association"
-        title="Association portal"
-        subtitle={`Association ID: ${id}`}
-        loginPath="/login/association"
-        navItems={associationNav}
-      >
+      <AssociationPortalShell associationId={id} navItems={associationNav}>
         {children}
-      </PortalShell>
+      </AssociationPortalShell>
     </AssociationAccessGuard>
   );
 };

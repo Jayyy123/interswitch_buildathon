@@ -1,18 +1,41 @@
+'use client';
+
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, UserRound, Wallet } from 'lucide-react';
 
 import { SectionCard } from '@/components/section-card';
 import { StatusBadge } from '@/components/status-badge';
 import { buttonVariants } from '@/components/ui/button-variants';
-import { MEMBERS } from '@/data/members';
+import { ApiError, getAssociationMemberById } from '@/lib/api';
+import { formatNgn } from '@/lib/claim-ui';
 
-type ScopedMemberDetailPageProps = {
-  params: Promise<{ id: string; memberId: string }>;
-};
+export default function ScopedMemberDetailPage() {
+  const params = useParams<{ id: string; memberId: string }>();
+  const id = params.id;
+  const memberId = params.memberId;
+  const memberQuery = useQuery({
+    queryKey: ['association-member', id, memberId],
+    queryFn: () => getAssociationMemberById(id, memberId),
+  });
+  const member = memberQuery.data;
 
-export default async function ScopedMemberDetailPage({ params }: ScopedMemberDetailPageProps) {
-  const { id, memberId } = await params;
-  const member = MEMBERS.find((item) => item.id === memberId);
+  if (memberQuery.isPending) {
+    return <p className="text-sm text-slate-400">Loading member details...</p>;
+  }
+
+  if (memberQuery.isError) {
+    return (
+      <SectionCard title="Could not load member" description="">
+        <p className="text-sm text-rose-300">
+          {memberQuery.error instanceof ApiError
+            ? memberQuery.error.message
+            : 'Could not load member details.'}
+        </p>
+      </SectionCard>
+    );
+  }
 
   if (!member) {
     return (
@@ -58,13 +81,13 @@ export default async function ScopedMemberDetailPage({ params }: ScopedMemberDet
 
       <SectionCard
         icon={UserRound}
-        title={member.fullName}
-        description={`${member.id} · Joined ${member.joinedAt}`}
+        title={member.name}
+        description={`${member.id} · Joined ${new Date(member.enrolledAt).toLocaleDateString()}`}
         action={
           <StatusBadge
             label={member.status}
             tone={
-              member.status === 'active' ? 'green' : member.status === 'paused' ? 'yellow' : 'red'
+              member.status === 'ACTIVE' ? 'green' : member.status === 'PAUSED' ? 'yellow' : 'red'
             }
           />
         }
@@ -74,8 +97,9 @@ export default async function ScopedMemberDetailPage({ params }: ScopedMemberDet
             <h4 className="font-semibold text-white">Profile details</h4>
             <p className="text-slate-300">Phone: {member.phone}</p>
             <p className="text-slate-300">BVN: {member.bvn}</p>
-            <p className="text-slate-300">Payment method: {member.paymentMethod}</p>
-            <p className="text-slate-300">Coverage used this year: {member.coverageUsedThisYear}</p>
+            <p className="text-slate-300">
+              Coverage used this year: {formatNgn(member.coverageUsedThisYear)}
+            </p>
             <p className="text-slate-300">
               Consecutive missed payments: {member.consecutiveMissedPayments}
             </p>
@@ -87,10 +111,12 @@ export default async function ScopedMemberDetailPage({ params }: ScopedMemberDet
               <Wallet className="size-4 text-emerald-300" />
               Wallet details
             </h4>
-            <p className="text-slate-300">Wallet ID: {member.walletId}</p>
-            <p className="text-slate-300">Account Number: {member.walletAccountNumber}</p>
-            <p className="text-slate-300">Bank Code: {member.bankCode}</p>
-            <p className="text-emerald-300">Balance: {member.walletBalance}</p>
+            <p className="text-slate-300">Wallet ID: {member.walletId ?? '-'}</p>
+            <p className="text-slate-300">Account Number: {member.walletAccountNumber ?? '-'}</p>
+            <p className="text-slate-300">Wallet status: {member.walletStatus}</p>
+            <p className="text-emerald-300">
+              Balance: {formatNgn(member.bankAccount?.balance ?? 0)}
+            </p>
           </div>
         </div>
       </SectionCard>
@@ -102,14 +128,16 @@ export default async function ScopedMemberDetailPage({ params }: ScopedMemberDet
         <div className="space-y-2">
           {member.recentContributions.map((item) => (
             <div
-              key={`${member.id}-${item.week}`}
+              key={item.id}
               className="flex items-center justify-between rounded-md border border-white/10 px-3 py-2 text-sm"
             >
-              <span className="text-slate-300">{item.week}</span>
-              <span className="text-white">{item.amount}</span>
+              <span className="text-slate-300">{new Date(item.week).toLocaleDateString()}</span>
+              <span className="text-white">{formatNgn(item.amount)}</span>
               <StatusBadge
-                label={item.status}
-                tone={item.status === 'success' ? 'green' : item.status === 'cash' ? 'blue' : 'red'}
+                label={item.status.toLowerCase()}
+                tone={
+                  item.status === 'SUCCESS' ? 'green' : item.status === 'PENDING' ? 'yellow' : 'red'
+                }
               />
             </div>
           ))}
