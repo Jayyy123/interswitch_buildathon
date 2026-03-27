@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Building2 } from 'lucide-react';
 
@@ -9,6 +10,9 @@ import { buttonVariants } from '@/components/ui/button-variants';
 import { ApiError, getClinicSetup, saveClinicSetup } from '@/lib/api';
 
 export default function ClinicSetupPage() {
+  const router = useRouter();
+  const params = useParams<{ id: string }>();
+  const clinicId = params?.id;
   const [draft, setDraft] = useState<{
     name?: string;
     address?: string;
@@ -32,7 +36,8 @@ export default function ClinicSetupPage() {
     onSuccess: () => {
       setSaved(true);
       setSaveError('');
-      setTimeout(() => setSaved(false), 3000);
+      // Redirect to dashboard after save so new users aren't stuck
+      setTimeout(() => router.push(`/clinic/${clinicId}`), 1500);
     },
     onError: (err: Error) => {
       setSaveError(err instanceof ApiError ? err.message : 'Save failed.');

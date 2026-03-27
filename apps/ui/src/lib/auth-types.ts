@@ -5,6 +5,7 @@ export type AuthUser = {
   id: string;
   phone: string;
   role: UserRole;
+  clinicId?: string | null; // stored at login for clinic users
 };
 
 export type ClaimStatusApi = 'PENDING' | 'APPROVED' | 'PAID' | 'REJECTED' | 'FAILED';

@@ -40,14 +40,24 @@ export const SignupForm = ({ role }: SignupFormProps) => {
   useEffect(() => {
     if (!hydrated || !user) return;
     if (user.role !== apiRole) return;
+    // Returning users: clinic users need their clinicId, fall back to register if missing
     const next =
       searchParams.get('next') ||
-      (role === 'association' ? '/association' : `/clinic/${user.id}/setup`);
+      (role === 'association'
+        ? '/association'
+        : user.clinicId
+          ? `/clinic/${user.clinicId}`
+          : '/clinic/register');
     router.replace(next);
   }, [hydrated, user, apiRole, role, router, searchParams]);
 
-  const setupPath = (u: AuthUser) =>
-    role === 'association' ? '/association' : `/clinic/${u.id}/setup`;
+  // For new clinic users always go to /clinic/register (one-time setup page)
+  const defaultPath = (res: { hasClinic: boolean; clinicId: string | null }) =>
+    role === 'association'
+      ? '/association'
+      : res.hasClinic && res.clinicId
+        ? `/clinic/${res.clinicId}`
+        : '/clinic/register';
 
   const sendOtpMutation = useMutation({
     mutationFn: sendOtp,
@@ -96,9 +106,10 @@ export const SignupForm = ({ role }: SignupFormProps) => {
         id: res.user.id,
         phone: res.user.phone,
         role: res.user.role as AuthUser['role'],
+        clinicId: res.clinicId ?? null,
       };
       login(res.accessToken, authUser);
-      const next = searchParams.get('next') || setupPath(authUser);
+      const next = searchParams.get('next') || defaultPath(res);
       toast.success(
         role === 'association'
           ? 'Account ready. Create or choose an association to continue.'
