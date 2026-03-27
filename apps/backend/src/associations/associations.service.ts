@@ -14,10 +14,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TermiiService } from '../termii/termii.service';
 import { PROVISION_POOL_WALLET, WALLET_PROVISION_QUEUE } from '../wallet-provision/wallet-provision.queue';
 import {
-  PROVISION_POOL_WALLET,
-  WALLET_PROVISION_QUEUE,
-} from '../wallet-provision/wallet-provision.queue';
-import {
   ClaimsQueryDto,
   CreateAssociationDto,
   MembersQueryDto,

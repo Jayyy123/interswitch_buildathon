@@ -143,8 +143,9 @@ export class MembersService {
         newMemberIds.push(member.id);
 
         // Enrollment SMS (sent immediately — no wallet details yet)
-        await this.termii.sendEnrollmentSms(
+        await this.termii.sendOnboarding(
           phone,
+          resolvedName,
           association.name,
           association.plan,
           weeklyAmount,
