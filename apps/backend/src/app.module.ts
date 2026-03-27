@@ -13,6 +13,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { PayoutsModule } from './payouts/payouts.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
+import { WalletProvisionModule } from './wallet-provision/wallet-provision.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { SchedulerModule } from './scheduler/scheduler.module';
     ClinicModule,
     ClaimsModule,
     PayoutsModule,
+    WalletProvisionModule,
   ],
   controllers: [AppController],
   providers: [AppService],
