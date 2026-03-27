@@ -16,6 +16,12 @@ services:
   #     timeout: 5s
   #     retries: 5
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
   backend:
     build:
       context: .
@@ -27,10 +33,10 @@ services:
       - apps/backend/.env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/hackathon_db?schema=public
+      REDIS_URL: redis://redis:6379
       NODE_ENV: development
-    # depends_on:
-    #   postgres:
-    #     condition: service_healthy
+    depends_on:
+      - redis
     volumes:
       - ./apps/backend/src:/app/apps/backend/src
       - ./apps/backend/prisma:/app/apps/backend/prisma

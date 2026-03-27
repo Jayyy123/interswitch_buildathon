@@ -12,5 +12,7 @@ WORKDIR /app/apps/backend
 RUN pnpm run prisma:generate && pnpm run build
 RUN CI=true pnpm prune --prod
 
+ENV NODE_ENV=production
 EXPOSE 3000
 CMD ["sh", "-c", "node_modules/.bin/prisma db push && node dist/main"]
+

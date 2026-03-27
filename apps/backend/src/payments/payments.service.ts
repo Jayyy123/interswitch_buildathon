@@ -40,7 +40,10 @@ export class PaymentsService {
   }
 
   async updateClaimStatus(claimId: string, status: ClaimStatus) {
-    return this.prisma.claim.update({ where: { id: claimId }, data: { status } });
+    return this.prisma.claim.update({
+      where: { id: claimId },
+      data: { status },
+    });
   }
 
   // ─── Submit Claim ─────────────────────────────────────────────────────────
@@ -49,7 +52,8 @@ export class PaymentsService {
     const member = await this.prisma.member.findFirst({
       where: { userId, associationId: dto.associationId },
     });
-    if (!member) throw new NotFoundException('Member not found in this association');
+    if (!member)
+      throw new NotFoundException('Member not found in this association');
 
     return this.prisma.claim.create({
       data: {
@@ -68,7 +72,11 @@ export class PaymentsService {
 
   // ─── Approve Claim + Payout ───────────────────────────────────────────────
 
-  async approveClaim(claimId: string, dto: ApproveClaimDto, iyalojaUserId: string) {
+  async approveClaim(
+    claimId: string,
+    dto: ApproveClaimDto,
+    iyalojaUserId: string,
+  ) {
     const claim = await this.prisma.claim.findUnique({
       where: { id: claimId },
       include: {
@@ -90,17 +98,29 @@ export class PaymentsService {
     if (approvedAmount >= SAFE_TOKEN_THRESHOLD) {
       if (!dto.safeTokenOtp) {
         // Send the SafeToken OTP to the Iyaloja and ask them to retry with it
-        const iyaloja = await this.prisma.user.findUnique({ where: { id: iyalojaUserId } });
+        const iyaloja = await this.prisma.user.findUnique({
+          where: { id: iyalojaUserId },
+        });
         if (iyaloja) await this.interswitch.sendSafeToken(iyaloja.phone);
-        throw new BadRequestException('OTP required for claims over ₦50,000. Check your SMS and resubmit with safeTokenOtp.');
+        throw new BadRequestException(
+          'OTP required for claims over ₦50,000. Check your SMS and resubmit with safeTokenOtp.',
+        );
       }
-      const iyaloja = await this.prisma.user.findUnique({ where: { id: iyalojaUserId } });
-      const valid = await this.interswitch.verifySafeToken(iyaloja!.phone, dto.safeTokenOtp);
-      if (!valid) throw new BadRequestException('Invalid or expired SafeToken OTP');
+      const iyaloja = await this.prisma.user.findUnique({
+        where: { id: iyalojaUserId },
+      });
+      const valid = await this.interswitch.verifySafeToken(
+        iyaloja!.phone,
+        dto.safeTokenOtp,
+      );
+      if (!valid)
+        throw new BadRequestException('Invalid or expired SafeToken OTP');
     }
 
     // Check pool balance
-    const association = await this.prisma.association.findUnique({ where: { id: claim.associationId } });
+    const association = await this.prisma.association.findUnique({
+      where: { id: claim.associationId },
+    });
     if ((association?.poolBalance ?? 0) < approvedAmount) {
       throw new BadRequestException(
         `Insufficient pool balance. Pool: ₦${association?.poolBalance?.toLocaleString()}, needed: ₦${approvedAmount.toLocaleString()}`,
@@ -148,11 +168,26 @@ export class PaymentsService {
 
         // Notify member
         if (claim.member.phone) {
-          await this.termii.sendClaimConfirmed(
+          const planLimits: Record<string, number> = {
+            BRONZE: 75_000,
+            SILVER: 150_000,
+            GOLD: 300_000,
+          };
+          const coverageLimit =
+            claim.association.coverageLimit ??
+            planLimits[claim.association.plan] ??
+            75_000;
+          const remaining = Math.max(
+            0,
+            coverageLimit -
+              (claim.member.coverageUsedThisYear + approvedAmount),
+          );
+          await this.termii.sendClaimPaidSms(
             claim.member.phone,
-            claim.member.name ?? 'Member',
             approvedAmount,
             claim.hospitalName,
+            new Date().toLocaleDateString('en-GB'),
+            remaining,
           );
         }
       } catch (err) {
@@ -165,7 +200,11 @@ export class PaymentsService {
       }
     }
 
-    return { claimId, status: interswitchRef ? 'PAID' : 'APPROVED', interswitchRef };
+    return {
+      claimId,
+      status: interswitchRef ? 'PAID' : 'APPROVED',
+      interswitchRef,
+    };
   }
 
   // ─── Wallet & Banks ───────────────────────────────────────────────────────
@@ -181,8 +220,11 @@ export class PaymentsService {
       include: {
         members: {
           select: {
-            id: true, name: true, phone: true,
-            walletId: true, walletAccountNumber: true,
+            id: true,
+            name: true,
+            phone: true,
+            walletId: true,
+            walletAccountNumber: true,
             wallet: { select: { interswitchRef: true, balance: true } },
           },
         },
@@ -215,10 +257,12 @@ export class PaymentsService {
         phone: m.phone,
         walletId: m.walletId,
         walletAccountNumber: m.walletAccountNumber,
-        bankAccount: m.wallet ? {
-          accountNumber: m.wallet.interswitchRef,
-          balance: m.wallet.balance,
-        } : null,
+        bankAccount: m.wallet
+          ? {
+              accountNumber: m.wallet.interswitchRef,
+              balance: m.wallet.balance,
+            }
+          : null,
       })),
     };
   }

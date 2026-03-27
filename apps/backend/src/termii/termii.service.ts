@@ -2,6 +2,7 @@ import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
+import { toInternational } from '../common/phone.util';
 
 @Injectable()
 export class TermiiService {
@@ -19,21 +20,27 @@ export class TermiiService {
     this.baseUrl = this.configService.getOrThrow('TERMII_BASE_URL');
   }
 
+  // ─── Core sender — never throws, always logs ──────────────────────────────
+
   private async send(to: string, sms: string): Promise<void> {
+    const intlPhone = toInternational(to);
     try {
       await firstValueFrom(
         this.httpService.post(`${this.baseUrl}/api/sms/send`, {
           api_key: this.apiKey,
-          to,
+          to: intlPhone,
           from: this.senderId,
           sms,
           type: 'plain',
           channel: 'generic',
         }),
       );
+      this.logger.log(`SMS sent to ${intlPhone.slice(0, 8)}***`);
     } catch (err) {
-      // Log but never throw — SMS failure must not break the primary flow
-      this.logger.error(`Termii send failed to ${to}`, err?.response?.data ?? err.message);
+      this.logger.error(
+        `Termii send failed to ${intlPhone}`,
+        err?.response?.data ?? err?.message,
+      );
     }
   }
 
@@ -46,100 +53,168 @@ export class TermiiService {
     );
   }
 
-  // ─── Onboarding ───────────────────────────────────────────────────────────
+  // ─── Enrollment (sent when member record is created) ──────────────────────
 
-  async sendOnboarding(phone: string, name: string, plan: string, clinicUrl?: string): Promise<void> {
-    const clinic = clinicUrl ? ` View your coverage: ${clinicUrl}` : '';
-    await this.send(
-      phone,
-      `Welcome to OmoHealth, ${name}! You are now covered under the ${plan} plan.${clinic} Reply STATUS to check coverage anytime.`,
-    );
-  }
-
-  // ─── Wallet Setup ─────────────────────────────────────────────────────────
-
-  async sendWalletSetup(phone: string, name: string, amount: number): Promise<void> {
-    await this.send(
-      phone,
-      `Hi ${name}, fund your OmoHealth wallet with at least NGN ${amount.toLocaleString()} to activate your health coverage. Contact your Iyaloja for payment details.`,
-    );
-  }
-
-  // ─── Weekly Contribution Confirmed ────────────────────────────────────────
-
-  async sendContributionConfirmed(phone: string, name: string, amount: number, poolBalance: number): Promise<void> {
-    await this.send(
-      phone,
-      `OmoHealth: NGN ${amount.toLocaleString()} contribution received for ${name}. Pool balance: NGN ${poolBalance.toLocaleString()}. Thank you!`,
-    );
-  }
-
-  // ─── Payment Failed ───────────────────────────────────────────────────────
-
-  async sendPaymentFailed(phone: string, name: string, amount: number): Promise<void> {
-    await this.send(
-      phone,
-      `OmoHealth: NGN ${amount.toLocaleString()} contribution for ${name} failed — insufficient wallet balance. Please top up within 3 days to keep your coverage active.`,
-    );
-  }
-
-  // ─── Coverage Paused ──────────────────────────────────────────────────────
-
-  async sendCoveragePaused(phone: string, name: string): Promise<void> {
-    await this.send(
-      phone,
-      `OmoHealth: Coverage for ${name} has been paused due to missed contributions. Reply START to reactivate, or contact your Iyaloja.`,
-    );
-  }
-
-  // ─── Claim Confirmed ──────────────────────────────────────────────────────
-
-  async sendClaimConfirmed(phone: string, name: string, amount: number, hospital: string): Promise<void> {
-    await this.send(
-      phone,
-      `OmoHealth: NGN ${amount.toLocaleString()} approved and sent to ${hospital} for ${name}. Stay strong!`,
-    );
-  }
-
-  // ─── Emergency Levy Request ───────────────────────────────────────────────
-
-  async sendEmergencyLevy(
+  async sendEnrollmentSms(
     phone: string,
-    memberName: string,
-    levyAmount: number,
-    totalNeeded: number,
+    associationName: string,
+    plan: string,
+    weeklyAmount: number,
+    startDate: string,
+    clinicName?: string,
   ): Promise<void> {
+    const clinic = clinicName ?? 'your nearest partner clinic';
+    const naira = weeklyAmount.toLocaleString('en-NG');
     await this.send(
       phone,
-      `OmoHealth URGENT: ${memberName} needs NGN ${totalNeeded.toLocaleString()} for emergency care. Your share is NGN ${levyAmount.toLocaleString()}. Reply YES to contribute now.`,
+      `E kaabo. You have been enrolled in ${associationName} OmoHealth.\n` +
+        `Coverage: ${plan}. Starts ${startDate}.\n` +
+        `N${naira} debits every Monday from your OmoHealth wallet.\n` +
+        `Nearest clinic: ${clinic}.\n` +
+        `Questions? Reply INFO.`,
     );
   }
 
-  // ─── Status Reply ─────────────────────────────────────────────────────────
+  // ─── Wallet setup (sent after background wallet provisioning completes) ────
 
-  async sendStatusReply(
+  async sendWalletSetupSms(
     phone: string,
     name: string,
-    status: 'COVERED' | 'PAUSED' | 'FLAGGED',
-    coverageUsed: number,
-    coverageLimit: number,
-    nextDebit: string,
+    accountNumber: string,
+    bankName: string,
+    weeklyAmount: number,
   ): Promise<void> {
-    const statusLabel =
-      status === 'COVERED' ? '✅ COVERED' : status === 'PAUSED' ? '⏸ PAUSED' : '🚫 FLAGGED';
-    const remaining = coverageLimit - coverageUsed;
+    const naira = weeklyAmount.toLocaleString('en-NG');
     await this.send(
       phone,
-      `OmoHealth Status for ${name}: ${statusLabel}. Used: NGN ${coverageUsed.toLocaleString()} of NGN ${coverageLimit.toLocaleString()}. Remaining: NGN ${remaining.toLocaleString()}. Next debit: ${nextDebit}.`,
+      `${name}, your OmoHealth wallet:\n` +
+        `Account: ${accountNumber} (${bankName})\n` +
+        `To fund: Dial *770*${accountNumber}*${naira}#\n` +
+        `Or visit any Quickteller agent with account number.\n` +
+        `N${naira} debits every Monday once funded.`,
     );
   }
 
-  // ─── Non-Member Inbound ───────────────────────────────────────────────────
+  // ─── Weekly contribution confirmed ────────────────────────────────────────
 
-  async sendNonMemberReply(phone: string): Promise<void> {
+  async sendContributionConfirmedSms(
+    phone: string,
+    weekNumber: number,
+    amount: number,
+    poolBalance: number,
+  ): Promise<void> {
     await this.send(
       phone,
-      `OmoHealth: We could not find your number in our system. Ask your market association Iyaloja to enroll you, or visit omohealth.ng for more information.`,
+      `OmoHealth: N${amount.toLocaleString('en-NG')} deducted. Week ${weekNumber}.\n` +
+        `Pool balance: N${poolBalance.toLocaleString('en-NG')}. You are COVERED.\n` +
+        `Reply STATUS for your coverage details.`,
+    );
+  }
+
+  // ─── Debit failed (48-hour grace window opens) ────────────────────────────
+
+  async sendDebitFailedSms(
+    phone: string,
+    amount: number,
+    accountNumber: string,
+  ): Promise<void> {
+    const naira = amount.toLocaleString('en-NG');
+    await this.send(
+      phone,
+      `OmoHealth: N${naira} debit failed this week.\n` +
+        `Top up your wallet within 48hrs to stay covered.\n` +
+        `Dial *770*${accountNumber}*${naira}# to fund now.\n` +
+        `Coverage pauses if not resolved.`,
+    );
+  }
+
+  // ─── Coverage paused (after grace period expires) ─────────────────────────
+
+  async sendCoveragePausedSms(phone: string, name: string): Promise<void> {
+    await this.send(
+      phone,
+      `OmoHealth: ${name}, your coverage is now PAUSED.\n` +
+        `Claims are not eligible while paused.\n` +
+        `Fund your wallet and reply START to reactivate.`,
+    );
+  }
+
+  // ─── Coverage reactivated (START reply received) ──────────────────────────
+
+  async sendCoverageReactivatedSms(phone: string, name: string): Promise<void> {
+    await this.send(
+      phone,
+      `OmoHealth: ${name}, your coverage has been reactivated. Welcome back!\n` +
+        `Weekly debits resume next Monday.`,
+    );
+  }
+
+  // ─── Claim paid ───────────────────────────────────────────────────────────
+
+  async sendClaimPaidSms(
+    phone: string,
+    amount: number,
+    hospitalName: string,
+    date: string,
+    remainingCover: number,
+  ): Promise<void> {
+    await this.send(
+      phone,
+      `OmoHealth: N${amount.toLocaleString('en-NG')} paid to ${hospitalName} on ${date}.\n` +
+        `Remaining annual cover: N${remainingCover.toLocaleString('en-NG')}.\n` +
+        `Get well soon.`,
+    );
+  }
+
+  // ─── Emergency levy ───────────────────────────────────────────────────────
+
+  async sendEmergencyLevySms(
+    phone: string,
+    patientName: string,
+    poolCap: number,
+    totalOwed: number,
+    memberShare: number,
+  ): Promise<void> {
+    await this.send(
+      phone,
+      `OmoHealth: ${patientName} needs emergency care.\n` +
+        `Pool has paid its N${poolCap.toLocaleString('en-NG')} cap. N${totalOwed.toLocaleString('en-NG')} still owed.\n` +
+        `Your share: N${memberShare.toLocaleString('en-NG')}. Reply YES to contribute.\n` +
+        `Voluntary. All YES replies deducted and sent to hospital.`,
+    );
+  }
+
+  // ─── Status reply (on SMS keyword STATUS) ────────────────────────────────
+
+  async sendStatusReplySms(
+    phone: string,
+    name: string,
+    plan: string,
+    memberStatus: string,
+    coverageUsed: number,
+    coverageLimit: number,
+    streakWeeks: number,
+    clinicName?: string,
+  ): Promise<void> {
+    const remaining = Math.max(0, coverageLimit - coverageUsed);
+    const clinic = clinicName ? `\nNearest clinic: ${clinicName}` : '';
+    await this.send(
+      phone,
+      `${name} | ${plan} Plan | ${memberStatus}\n` +
+        `Covered to: N${coverageLimit.toLocaleString('en-NG')}/yr\n` +
+        `Used: N${coverageUsed.toLocaleString('en-NG')} | Remaining: N${remaining.toLocaleString('en-NG')}\n` +
+        `Contributions: ${streakWeeks}-week streak${clinic}`,
+    );
+  }
+
+  // ─── Non-member inbound ───────────────────────────────────────────────────
+
+  async sendNonMemberReplySms(phone: string): Promise<void> {
+    await this.send(
+      phone,
+      `You texted OmoHealth but you are not registered.\n` +
+        `Ask your association admin to enroll you.\n` +
+        `Or reply JOIN for an individual N500/week plan.`,
     );
   }
 }
