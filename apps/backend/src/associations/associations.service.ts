@@ -12,6 +12,7 @@ import { toLocal } from '../common/phone.util';
 import { InterswitchService } from '../interswitch/interswitch.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TermiiService } from '../termii/termii.service';
+import { PROVISION_POOL_WALLET, WALLET_PROVISION_QUEUE } from '../wallet-provision/wallet-provision.queue';
 import {
   PROVISION_POOL_WALLET,
   WALLET_PROVISION_QUEUE,

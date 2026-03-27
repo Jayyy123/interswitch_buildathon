@@ -94,8 +94,8 @@ const NIGERIAN_BANKS: BankCode[] = [
 export class InterswitchService {
   private readonly logger = new Logger(InterswitchService.name);
 
-  // ── Passport (token) base
-  private readonly passportUrl = 'https://qa.interswitchng.com';
+  // ── Passport (token) base — configurable so CF worker can proxy all ISW calls
+  private readonly passportUrl: string;
 
   // ── QTB credentials (payment gateway, virtual accounts)
   private readonly qtbClientId: string;
