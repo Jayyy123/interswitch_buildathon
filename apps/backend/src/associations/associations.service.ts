@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PlanTier, UserRole } from '@prisma/client';
+import { toLocal } from '../common/phone.util';
 import { InterswitchService } from '../interswitch/interswitch.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TermiiService } from '../termii/termii.service';
@@ -125,9 +126,7 @@ export class AssociationsService {
         select: { phone: true },
       });
       if (!user) return [];
-      const localPhone = user.phone.startsWith('+234') ? '0' + user.phone.slice(4)
-                       : user.phone.startsWith('234')  ? '0' + user.phone.slice(3)
-                       : user.phone;
+      const localPhone = toLocal(user.phone);
       const members = await this.prisma.member.findMany({
         where: { phone: { in: [user.phone, localPhone] } },
         select: {

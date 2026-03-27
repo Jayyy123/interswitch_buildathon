@@ -2,6 +2,7 @@ import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
+import { toInternational } from '../common/phone.util';
 
 @Injectable()
 export class TermiiService {
@@ -22,20 +23,21 @@ export class TermiiService {
   // ─── Core sender — never throws, always logs ──────────────────────────────
 
   private async send(to: string, sms: string): Promise<void> {
+    const intlPhone = toInternational(to);
     try {
       await firstValueFrom(
         this.httpService.post(`${this.baseUrl}/api/sms/send`, {
           api_key: this.apiKey,
-          to,
-          from: this.senderId,
+          to:      intlPhone,
+          from:    this.senderId,
           sms,
-          type: 'plain',
+          type:    'plain',
           channel: 'generic',
         }),
       );
-      this.logger.log(`SMS sent to ${to.slice(0, 7)}***`);
+      this.logger.log(`SMS sent to ${intlPhone.slice(0, 8)}***`);
     } catch (err) {
-      this.logger.error(`Termii send failed to ${to}`, err?.response?.data ?? err?.message);
+      this.logger.error(`Termii send failed to ${intlPhone}`, err?.response?.data ?? err?.message);
     }
   }
 

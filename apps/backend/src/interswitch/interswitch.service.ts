@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { AxiosError } from 'axios';
 import { createHash, randomUUID } from 'crypto';
 import { firstValueFrom } from 'rxjs';
+import { toLocal } from '../common/phone.util';
 
 // ─── Token Cache ──────────────────────────────────────────────────────────────
 
@@ -348,10 +349,8 @@ export class InterswitchService {
     status: string;
   }> {
     const token = await this.getGIToken();
-    // Normalize to local Nigerian format (07XXXXXXXX / 08XXXXXXXX)
-    const localPhone = phone.startsWith('+234') ? '0' + phone.slice(4)
-                     : phone.startsWith('234')  ? '0' + phone.slice(3)
-                     : phone;
+    // Normalize to local Nigerian format required by ISW Merchant Wallet (07XXXXXXXXX)
+    const localPhone = toLocal(phone);
     try {
       const { data } = await firstValueFrom(
         this.httpService.post(
