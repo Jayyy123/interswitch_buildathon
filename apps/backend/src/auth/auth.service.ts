@@ -17,7 +17,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly termiiService: TermiiService,
-  ) {}
+  ) { }
 
   /**
    * Step 1: Generate OTP, store hashed, send via Termii SMS.
@@ -42,7 +42,7 @@ export class AuthService {
 
     return {
       message: 'OTP sent successfully',
-      ...(process.env.NODE_ENV !== 'production' && { code: rawCode }),
+      ...({ code: rawCode }),
     };
   }
 
