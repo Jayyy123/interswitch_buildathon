@@ -98,8 +98,8 @@ const NIGERIAN_BANKS: BankCode[] = [
 export class InterswitchService {
   private readonly logger = new Logger(InterswitchService.name);
 
-  // ── Passport (token) base
-  private readonly passportUrl = 'https://qa.interswitchng.com';
+  // ── Passport (token) base — configurable so CF worker can proxy all ISW calls
+  private readonly passportUrl: string;
 
   // ── QTB credentials (payment gateway, virtual accounts)
   private readonly qtbClientId: string;
@@ -149,6 +149,12 @@ export class InterswitchService {
     this.walletSecretKey = this.configService.get('INTERSWITCH_WALLET_SECRET_KEY', this.qtbSecretKey);
     this.walletId        = this.configService.get('INTERSWITCH_WALLET_ID', '2700014982');
     this.walletPin       = this.configService.get('INTERSWITCH_WALLET_PIN', '1234');
+    // ISW_PASSPORT_BASE: set to CF worker URL to proxy all OAuth + collections calls
+    // Worker routes /collections, /passport, /quicktellerservice → qa.interswitchng.com
+    this.passportUrl = this.configService.get(
+      'ISW_PASSPORT_BASE',
+      'https://qa.interswitchng.com',
+    );
     // CF Worker proxy overrides ISW direct URL (avoids Railway IP restrictions)
     this.merchantWalletBase = this.configService.get(
       'ISW_MERCHANT_WALLET_BASE',
