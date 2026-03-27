@@ -169,6 +169,11 @@ export class InterswitchService {
       'ISW_MERCHANT_WALLET_BASE',
       'https://merchant-wallet.k8.isw.la/merchant-wallet',
     );
+    // passportUrl — set ISW_PASSPORT_BASE to CF worker URL to bypass IP block
+    this.passportUrl = this.configService.get(
+      'ISW_PASSPORT_BASE',
+      'https://qa.interswitchng.com',
+    );
   }
 
   // ─── Token helpers ────────────────────────────────────────────────────────────
