@@ -52,8 +52,14 @@ export const LoginForm = ({ role }: LoginFormProps) => {
   useEffect(() => {
     if (!hydrated || !user) return;
     if (user.role !== apiRole) return;
+    // Returning clinic users: use the stored clinicId, fall back to /clinic/register for old sessions missing it
     const next =
-      searchParams.get('next') || (role === 'association' ? '/association' : `/clinic/${user.id}`);
+      searchParams.get('next') ||
+      (role === 'association'
+        ? '/association'
+        : user.clinicId
+          ? `/clinic/${user.clinicId}`
+          : '/clinic/register');
     router.replace(next);
   }, [hydrated, user, apiRole, role, router, searchParams]);
 
@@ -117,6 +123,7 @@ export const LoginForm = ({ role }: LoginFormProps) => {
         id: res.user.id,
         phone: res.user.phone,
         role: res.user.role as AuthUser['role'],
+        clinicId: res.clinicId ?? null,
       };
       login(res.accessToken, authUser);
       const next = searchParams.get('next') || defaultPath(res);
