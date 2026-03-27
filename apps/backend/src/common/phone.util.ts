@@ -1,7 +1,16 @@
 /**
  * Nigerian phone number utilities — backed by Google's libphonenumber-js.
+ *
  * All functions assume Nigeria (NG) and reject any number that is not a valid
  * Nigerian mobile number.
+ *
+ * ┌─────────────────┬──────────────────────────────────┐
+ * │ Consumer        │ Required format                   │
+ * ├─────────────────┼──────────────────────────────────┤
+ * │ Termii SMS      │ +2348012345678  (E.164 / toE164) │
+ * │ ISW Merchant    │ 08012345678     (local / toLocal) │
+ * │   Wallet API    │                                   │
+ * └─────────────────┴──────────────────────────────────┘
  */
 
 import { BadRequestException } from '@nestjs/common';
@@ -12,7 +21,7 @@ import {
 
 /**
  * Parse and validate a Nigerian phone number.
- * Accepts: 08012345678  |  +2348012345678  |  2348012345678
+ * Accepts: 08012345678 | +2348012345678 | 2348012345678
  * Throws 400 BadRequest if the number is not a valid NG number.
  */
 export function parseNigerianPhone(raw: string): PhoneNumber {
@@ -25,12 +34,15 @@ export function parseNigerianPhone(raw: string): PhoneNumber {
   return phone;
 }
 
-/** Returns E.164 format: +2348012345678 */
+/** E.164 format for Termii SMS: +2348012345678 */
 export function toE164(raw: string): string {
   return parseNigerianPhone(raw).format('E.164');
 }
 
-/** Returns local format: 08012345678 */
+/** Alias — Termii service imports this name */
+export const toInternational = toE164;
+
+/** Local format for ISW Merchant Wallet: 08012345678 */
 export function toLocal(raw: string): string {
   return parseNigerianPhone(raw).formatNational().replace(/\s/g, '');
 }
@@ -43,7 +55,13 @@ export function toLocal(raw: string): string {
  */
 export function phoneVariants(raw: string): string[] {
   const phone = parseNigerianPhone(raw);
-  const e164 = phone.format('E.164'); // +2348012345678
-  const national = phone.formatNational().replace(/\s/g, ''); // 08012345678
+  const e164     = phone.format('E.164');
+  const national = phone.formatNational().replace(/\s/g, '');
   return Array.from(new Set([e164, national, raw.trim()]));
+}
+
+/** Non-throwing structural validation. */
+export function isValidNigerianPhone(raw: string): boolean {
+  try { parseNigerianPhone(raw); return true; }
+  catch { return false; }
 }

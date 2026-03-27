@@ -1,6 +1,7 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AssociationsModule } from './associations/associations.module';
@@ -12,11 +13,16 @@ import { MembersModule } from './members/members.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PayoutsModule } from './payouts/payouts.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { SchedulerModule } from './scheduler/scheduler.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    // Global BullMQ Redis connection — all queues share this
+
+    // Cron / @Interval scheduler (weekly contribution debits)
+    ScheduleModule.forRoot(),
+
+    // BullMQ — Redis-backed job queues for heavy async work
     BullModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -32,12 +38,14 @@ import { PrismaModule } from './prisma/prisma.module';
         },
       }),
     }),
+
     PrismaModule,
     AuthModule,
     InterswitchModule,
     PaymentsModule,
     MembersModule,
     AssociationsModule,
+    SchedulerModule,
     ClinicModule,
     ClaimsModule,
     PayoutsModule,
