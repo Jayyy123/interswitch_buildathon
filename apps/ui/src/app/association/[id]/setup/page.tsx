@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2 } from 'lucide-react';
@@ -15,10 +15,12 @@ export default function AssociationSetupPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const queryClient = useQueryClient();
-  const [name, setName] = useState('');
-  const [cacNumber, setCacNumber] = useState('');
-  const [plan, setPlan] = useState<'BRONZE' | 'SILVER' | 'GOLD'>('GOLD');
-  const [coverageLimit, setCoverageLimit] = useState('');
+  const [draft, setDraft] = useState<{
+    name?: string;
+    cacNumber?: string;
+    plan?: 'BRONZE' | 'SILVER' | 'GOLD';
+    coverageLimit?: string;
+  }>({});
   const [message, setMessage] = useState('');
 
   const associationsQuery = useQuery({
@@ -26,16 +28,13 @@ export default function AssociationSetupPage() {
     queryFn: getMyAssociations,
   });
 
-  useEffect(() => {
-    const association = associationsQuery.data?.find((item) => item.id === id);
-    if (!association) return;
-    setName(association.name ?? '');
-    setCacNumber(association.cacNumber ?? '');
-    setPlan((association.plan ?? 'GOLD') as 'BRONZE' | 'SILVER' | 'GOLD');
-    setCoverageLimit(
-      typeof association.coverageLimit === 'number' ? String(association.coverageLimit) : '',
-    );
-  }, [associationsQuery.data, id]);
+  const association = associationsQuery.data?.find((item) => item.id === id);
+  const name = draft.name ?? association?.name ?? '';
+  const cacNumber = draft.cacNumber ?? association?.cacNumber ?? '';
+  const plan = draft.plan ?? ((association?.plan ?? 'GOLD') as 'BRONZE' | 'SILVER' | 'GOLD');
+  const coverageLimit =
+    draft.coverageLimit ??
+    (typeof association?.coverageLimit === 'number' ? String(association.coverageLimit) : '');
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -75,7 +74,7 @@ export default function AssociationSetupPage() {
           <input
             className="w-full rounded-lg border border-white/15 bg-slate-900 px-3 py-2"
             value={name}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}
           />
         </label>
         <label className="text-sm">
@@ -83,14 +82,19 @@ export default function AssociationSetupPage() {
           <input
             className="w-full rounded-lg border border-white/15 bg-slate-900 px-3 py-2"
             value={cacNumber}
-            onChange={(event) => setCacNumber(event.target.value)}
+            onChange={(event) => setDraft((prev) => ({ ...prev, cacNumber: event.target.value }))}
           />
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-slate-300">Plan tier</span>
           <select
             value={plan}
-            onChange={(event) => setPlan(event.target.value as 'BRONZE' | 'SILVER' | 'GOLD')}
+            onChange={(event) =>
+              setDraft((prev) => ({
+                ...prev,
+                plan: event.target.value as 'BRONZE' | 'SILVER' | 'GOLD',
+              }))
+            }
             className="w-full rounded-lg border border-white/15 bg-slate-900 px-3 py-2"
           >
             <option value="BRONZE">Bronze</option>
@@ -108,7 +112,9 @@ export default function AssociationSetupPage() {
             min={1}
             className="w-full rounded-lg border border-white/15 bg-slate-900 px-3 py-2"
             value={coverageLimit}
-            onChange={(event) => setCoverageLimit(event.target.value)}
+            onChange={(event) =>
+              setDraft((prev) => ({ ...prev, coverageLimit: event.target.value }))
+            }
           />
         </label>
         <div className="sm:col-span-2">

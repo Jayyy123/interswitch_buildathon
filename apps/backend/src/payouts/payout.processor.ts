@@ -1,3 +1,4 @@
+// build: 2026-03-27T15:54-bullmq-redis-fix
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';

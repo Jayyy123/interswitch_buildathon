@@ -5,11 +5,17 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
 import { PlanTier, UserRole } from '@prisma/client';
+import { Queue } from 'bullmq';
 import { toLocal } from '../common/phone.util';
 import { InterswitchService } from '../interswitch/interswitch.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TermiiService } from '../termii/termii.service';
+import {
+  PROVISION_POOL_WALLET,
+  WALLET_PROVISION_QUEUE,
+} from '../wallet-provision/wallet-provision.queue';
 import {
   ClaimsQueryDto,
   CreateAssociationDto,
@@ -47,7 +53,13 @@ export class AssociationsService {
     private readonly prisma: PrismaService,
     private readonly interswitch: InterswitchService,
     private readonly termii: TermiiService,
-  ) {}
+    @InjectQueue(WALLET_PROVISION_QUEUE)
+    private readonly walletQueue: Queue,
+  ) {
+    walletQueue.on('error', (err) =>
+      this.logger.warn('Wallet queue error:', err.message),
+    );
+  }
 
   // ─── Create association ────────────────────────────────────────────────────
 
@@ -80,37 +92,32 @@ export class AssociationsService {
       },
     });
 
-    // Auto-create pool wallet in the background — same pattern as member wallets.
-    // Returns immediately so the association is visible to the Iyaloja right away.
-    // walletId/walletAccountNumber will be null until ISW responds (check GET /wallet).
+    // Enqueue pool wallet provisioning via BullMQ — retries on ETIMEDOUT automatically
     const assocDigits = association.id
       .replace(/[^0-9]/g, '')
       .padEnd(7, '0')
       .slice(0, 7);
     const poolPhone = `0803${assocDigits}`;
-    Promise.resolve().then(async () => {
-      try {
-        const poolWallet = await this.interswitch.createMemberWallet(
-          `${dto.name} Pool`,
-          poolPhone,
-          `pool-${association.id}@omohealth.ng`,
-        );
-        await this.prisma.association.update({
-          where: { id: association.id },
-          data: {
-            walletId: poolWallet.walletId,
-            walletAccountNumber: poolWallet.settlementAccountNumber,
-          },
-        });
-        this.logger.log(
-          `Pool wallet provisioned for ${association.id}: ${poolWallet.walletId}`,
-        );
-      } catch (err) {
-        this.logger.warn(
-          `Pool wallet provisioning failed for ${association.id}: ${err?.message}`,
-        );
-      }
-    });
+    try {
+      await this.walletQueue.add(
+        PROVISION_POOL_WALLET,
+        {
+          associationId: association.id,
+          name: `${dto.name} Pool`,
+          phone: poolPhone,
+          email: `pool-${association.id}@omohealth.ng`,
+        },
+        {
+          jobId: `pool-wallet-${association.id}`,
+          removeOnComplete: true,
+          removeOnFail: 100,
+        },
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Pool wallet job not queued (Redis unavailable): ${err?.message}`,
+      );
+    }
 
     return this.prisma.association.findUnique({
       where: { id: association.id },
