@@ -1,7 +1,6 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AssociationsModule } from './associations/associations.module';
@@ -19,10 +18,7 @@ import { SchedulerModule } from './scheduler/scheduler.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
 
-    // Cron / @Interval scheduler (weekly contribution debits)
-    ScheduleModule.forRoot(),
-
-    // BullMQ — Redis-backed job queues for heavy async work
+    // BullMQ — Redis-backed job queues (weekly debits, payouts)
     BullModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
