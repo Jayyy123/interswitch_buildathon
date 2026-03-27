@@ -1,5 +1,29 @@
 import { getStoredToken } from '@/lib/session';
 import type { Association, ClaimDetail, CreateAssociationPayload } from '@/lib/auth-types';
+import type {
+  ClaimListItem,
+  ClinicClaim,
+  ClinicClaimResult,
+  ClinicSetup,
+  ClinicStats,
+  MemberLookupResult,
+  RegisterClinicResponse,
+  VerifyOtpResponse,
+} from './api.types';
+
+// Re-export types so existing imports from '@/lib/api' keep working
+export type {
+  ClaimListItem,
+  ClinicClaim,
+  ClinicClaimResult,
+  ClinicSetup,
+  ClinicStats,
+  MemberLookupResult,
+  RegisterClinicResponse,
+  VerifyOtpResponse,
+} from './api.types';
+
+// ─── Core fetch infra ─────────────────────────────────────────────────────────
 
 const baseUrl = () =>
   (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_API_URL) || 'http://localhost:3000';
@@ -38,14 +62,9 @@ export const apiFetch = async <T>(
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const res = await fetch(`${baseUrl()}${path}`, {
-    ...init,
-    headers,
-  });
+  const res = await fetch(`${baseUrl()}${path}`, { ...init, headers });
 
-  if (res.status === 204) {
-    return undefined as T;
-  }
+  if (res.status === 204) return undefined as T;
 
   const text = await res.text();
   let body: unknown = null;
@@ -57,64 +76,89 @@ export const apiFetch = async <T>(
     }
   }
 
-  if (!res.ok) {
-    throw new ApiError(parseErrorMessage(body), res.status);
-  }
-
+  if (!res.ok) throw new ApiError(parseErrorMessage(body), res.status);
   return body as T;
 };
 
-export async function sendOtp(phone: string) {
-  const result = await apiFetch<{ message: string; code?: string }>('/auth/send-otp', {
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+export const sendOtp = async (phone: string) =>
+  apiFetch<{ message: string; code?: string }>('/auth/send-otp', {
     method: 'POST',
     body: JSON.stringify({ phone }),
     skipAuth: true,
   });
-  return result;
-}
 
-export const verifyOtp = async (payload: { phone: string; code: string; role: string }) => {
-  const result = await apiFetch<{
-    accessToken: string;
-    user: { id: string; phone: string; role: string };
-  }>('/auth/verify-otp', {
+export const verifyOtp = async (payload: { phone: string; code: string; role: string }) =>
+  apiFetch<VerifyOtpResponse>('/auth/verify-otp', {
     method: 'POST',
     body: JSON.stringify(payload),
     skipAuth: true,
   });
-  return result;
-};
 
-export const getClaims = async () => {
-  const result = await apiFetch<
-    {
-      id: string;
-      associationId: string;
-      memberId: string;
-      hospitalName: string;
-      billAmount: number;
-      approvedAmount: number | null;
-      status: string;
-      createdAt: string;
-    }[]
-  >('/payments/claims');
-  return result;
-};
+// ─── Payments / Claims (member-side) ─────────────────────────────────────────
 
-export const getClaimById = async (id: string) => {
-  const result = await apiFetch<ClaimDetail>(`/payments/claims/${encodeURIComponent(id)}`);
-  return result;
-};
+export const getClaims = async () => apiFetch<ClaimListItem[]>('/payments/claims');
 
-export const getMyAssociations = async () => {
-  const result = await apiFetch<Association[]>('/associations');
-  return result;
-};
+export const getClaimById = async (id: string) =>
+  apiFetch<ClaimDetail>(`/payments/claims/${encodeURIComponent(id)}`);
 
-export const createAssociation = async (payload: CreateAssociationPayload) => {
-  const result = await apiFetch<Association>('/associations', {
+// ─── Associations ─────────────────────────────────────────────────────────────
+
+export const getMyAssociations = async () => apiFetch<Association[]>('/associations');
+
+export const createAssociation = async (payload: CreateAssociationPayload) =>
+  apiFetch<Association>('/associations', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  return result;
-};
+
+// ─── Clinic — identity ────────────────────────────────────────────────────────
+
+export const registerClinic = async (payload: {
+  name: string;
+  address?: string;
+  bankAccount?: string;
+  bankCode?: string;
+}): Promise<RegisterClinicResponse> =>
+  apiFetch('/clinic/register', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const getClinicSetup = async (): Promise<ClinicSetup> =>
+  apiFetch<ClinicSetup>('/clinic/setup');
+
+export const saveClinicSetup = async (payload: {
+  name: string;
+  address?: string;
+  bankAccount?: string;
+  bankCode?: string;
+}): Promise<ClinicSetup> =>
+  apiFetch<ClinicSetup>('/clinic/setup', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+
+// ─── Claims — clinic-side ─────────────────────────────────────────────────────
+
+export const lookupMember = async (phone: string): Promise<MemberLookupResult> =>
+  apiFetch<MemberLookupResult>(`/claims/members/lookup?phone=${encodeURIComponent(phone)}`);
+
+export const getClinicStats = async (): Promise<ClinicStats> =>
+  apiFetch<ClinicStats>('/claims/stats');
+
+export const submitClinicClaim = async (payload: {
+  memberId: string;
+  associationId: string;
+  billAmount: number;
+  description?: string;
+  billPhotoUrl?: string;
+}): Promise<ClinicClaimResult> =>
+  apiFetch<ClinicClaimResult>('/claims', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const getClinicClaims = async (): Promise<ClinicClaim[]> =>
+  apiFetch<ClinicClaim[]>('/claims');

@@ -57,8 +57,18 @@ export const LoginForm = ({ role }: LoginFormProps) => {
     router.replace(next);
   }, [hydrated, user, apiRole, role, router, searchParams]);
 
-  const defaultPath = (u: AuthUser) =>
-    role === 'association' ? '/association' : `/clinic/${u.id}`;
+  const defaultPath = (res: {
+    user: { id: string };
+    hasClinic: boolean;
+    clinicId: string | null;
+    hasAssociation: boolean;
+  }) => {
+    if (role === 'clinic') {
+      if (!res.hasClinic) return '/clinic/register';
+      return `/clinic/${res.clinicId}`;
+    }
+    return '/association';
+  };
 
   const sendOtpMutation = useMutation({
     mutationFn: sendOtp,
@@ -109,7 +119,7 @@ export const LoginForm = ({ role }: LoginFormProps) => {
         role: res.user.role as AuthUser['role'],
       };
       login(res.accessToken, authUser);
-      const next = searchParams.get('next') || defaultPath(authUser);
+      const next = searchParams.get('next') || defaultPath(res);
       toast.success('Signed in successfully.');
       router.push(next);
     } catch (e) {
