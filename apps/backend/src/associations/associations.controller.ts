@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Patch,
   Param,
   Post,
   Query,
@@ -17,6 +18,7 @@ import {
   EnrollMembersDto,
   MembersQueryDto,
   TransactionsQueryDto,
+  UpdateAssociationDto,
   VerifyPaymentDto,
 } from './dto/associations.dto';
 
@@ -61,6 +63,16 @@ export class AssociationsController {
   @Get(':id/wallet')
   getWallet(@Param('id') id: string, @Request() req) {
     return this.associationsService.getWallet(id, req.user.userId);
+  }
+
+  /** PATCH /associations/:id — update association profile + pricing */
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateAssociationDto,
+    @Request() req,
+  ) {
+    return this.associationsService.updateAssociation(id, dto, req.user.userId);
   }
 
   // ─── Members ──────────────────────────────────────────────────────────────
@@ -127,6 +139,16 @@ export class AssociationsController {
     @Request() req,
   ) {
     return this.associationsService.getClaims(id, req.user.userId, query);
+  }
+
+  /** GET /associations/:id/claims/:claimId — single claim detail */
+  @Get(':id/claims/:claimId')
+  getClaimById(
+    @Param('id') id: string,
+    @Param('claimId') claimId: string,
+    @Request() req,
+  ) {
+    return this.associationsService.getClaimById(id, claimId, req.user.userId);
   }
 
   // ─── Transactions ─────────────────────────────────────────────────────────

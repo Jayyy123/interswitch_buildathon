@@ -18,7 +18,7 @@ export default async function MembersPage({ params }: MembersPageProps) {
         title="Enroll members"
         description="Add one by one or bulk upload CSV (name, phone, BVN)."
       >
-        <EnrollMembersSection />
+        <EnrollMembersSection associationId={id} />
       </SectionCard>
 
       <SectionCard

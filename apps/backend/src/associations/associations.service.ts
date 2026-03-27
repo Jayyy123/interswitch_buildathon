@@ -15,6 +15,7 @@ import {
   CreateAssociationDto,
   MembersQueryDto,
   TransactionsQueryDto,
+  UpdateAssociationDto,
   VerifyPaymentDto,
 } from './dto/associations.dto';
 
@@ -125,7 +126,10 @@ export class AssociationsService {
         select: {
           id: true,
           name: true,
+          cacNumber: true,
           plan: true,
+          monthlyDues: true,
+          coverageLimit: true,
           walletId: true,
           walletAccountNumber: true,
           poolBalance: true,
@@ -253,6 +257,30 @@ export class AssociationsService {
     };
   }
 
+  async updateAssociation(
+    id: string,
+    dto: UpdateAssociationDto,
+    userId: string,
+  ) {
+    await this._ownerOrThrow(id, userId);
+
+    const data: Record<string, any> = {};
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.cacNumber !== undefined) data.cacNumber = dto.cacNumber;
+    if (dto.plan !== undefined) data.plan = dto.plan as PlanTier;
+    if (dto.monthlyDues !== undefined) data.monthlyDues = dto.monthlyDues;
+    if (dto.coverageLimit !== undefined) data.coverageLimit = dto.coverageLimit;
+
+    if (Object.keys(data).length === 0) {
+      throw new ForbiddenException('No fields to update.');
+    }
+
+    return this.prisma.association.update({
+      where: { id },
+      data,
+    });
+  }
+
   // ─── Members list (paginated + filtered) ──────────────────────────────────
 
   async getMembers(id: string, userId: string, query: MembersQueryDto) {
@@ -372,6 +400,30 @@ export class AssociationsService {
     ]);
 
     return { data, total, page, limit };
+  }
+
+  async getClaimById(id: string, claimId: string, userId: string) {
+    const association = await this._ownerOrThrow(id, userId);
+    const claim = await this.prisma.claim.findFirst({
+      where: { id: claimId, associationId: id },
+      select: {
+        id: true,
+        hospitalName: true,
+        billAmount: true,
+        approvedAmount: true,
+        status: true,
+        description: true,
+        billPhotoUrl: true,
+        createdAt: true,
+        member: { select: { id: true, name: true, phone: true } },
+      },
+    });
+    if (!claim) throw new NotFoundException('Claim not found');
+
+    return {
+      ...claim,
+      association: { id: association.id, name: association.name },
+    };
   }
 
   // ─── Transactions list (paginated + filtered) ─────────────────────────────

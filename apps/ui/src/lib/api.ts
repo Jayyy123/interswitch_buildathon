@@ -1,5 +1,20 @@
 import { getStoredToken } from '@/lib/session';
-import type { Association, ClaimDetail, CreateAssociationPayload } from '@/lib/auth-types';
+import type {
+  Association,
+  AssociationClaimDetail,
+  AssociationClaimsResponse,
+  AssociationDashboard,
+  AssociationMemberDetail,
+  AssociationMembersResponse,
+  AssociationTransactionsResponse,
+  AssociationWallet,
+  ClaimDetail,
+  CreateAssociationPayload,
+  EnrollAssociationMembersPayload,
+  UpdateAssociationPayload,
+  VerifyAssociationPaymentPayload,
+  VerifyAssociationPaymentResponse,
+} from '@/lib/auth-types';
 import type {
   ClaimListItem,
   ClinicClaim,
@@ -112,6 +127,101 @@ export const createAssociation = async (payload: CreateAssociationPayload) =>
     method: 'POST',
     body: JSON.stringify(payload),
   });
+
+export const updateAssociation = async (associationId: string, payload: UpdateAssociationPayload) =>
+  apiFetch<Association>(`/associations/${encodeURIComponent(associationId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+
+export const getAssociationDashboard = async (associationId: string) =>
+  apiFetch<AssociationDashboard>(`/associations/${encodeURIComponent(associationId)}/dashboard`);
+
+export const getAssociationWallet = async (associationId: string) =>
+  apiFetch<AssociationWallet>(`/associations/${encodeURIComponent(associationId)}/wallet`);
+
+export const getAssociationMembers = async (
+  associationId: string,
+  params: { page?: number; limit?: number; status?: string; search?: string } = {},
+) => {
+  const query = new URLSearchParams();
+  if (params.page) query.set('page', String(params.page));
+  if (params.limit) query.set('limit', String(params.limit));
+  if (params.status) query.set('status', params.status);
+  if (params.search) query.set('search', params.search);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return apiFetch<AssociationMembersResponse>(
+    `/associations/${encodeURIComponent(associationId)}/members${suffix}`,
+  );
+};
+
+export const getAssociationMemberById = async (associationId: string, memberId: string) =>
+  apiFetch<AssociationMemberDetail>(
+    `/associations/${encodeURIComponent(associationId)}/members/${encodeURIComponent(memberId)}`,
+  );
+
+export const enrollAssociationMembers = async (
+  associationId: string,
+  payload: EnrollAssociationMembersPayload,
+) =>
+  apiFetch(`/associations/${encodeURIComponent(associationId)}/members/enroll`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const retryAssociationMemberWallet = async (associationId: string, memberId: string) =>
+  apiFetch(
+    `/associations/${encodeURIComponent(associationId)}/members/${encodeURIComponent(memberId)}/retry-wallet`,
+    {
+      method: 'POST',
+    },
+  );
+
+export const getAssociationClaims = async (
+  associationId: string,
+  params: { page?: number; limit?: number; status?: string } = {},
+) => {
+  const query = new URLSearchParams();
+  if (params.page) query.set('page', String(params.page));
+  if (params.limit) query.set('limit', String(params.limit));
+  if (params.status) query.set('status', params.status);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return apiFetch<AssociationClaimsResponse>(
+    `/associations/${encodeURIComponent(associationId)}/claims${suffix}`,
+  );
+};
+
+export const getAssociationClaimById = async (associationId: string, claimId: string) =>
+  apiFetch<AssociationClaimDetail>(
+    `/associations/${encodeURIComponent(associationId)}/claims/${encodeURIComponent(claimId)}`,
+  );
+
+export const getAssociationTransactions = async (
+  associationId: string,
+  params: { page?: number; limit?: number; source?: string; week?: string } = {},
+) => {
+  const query = new URLSearchParams();
+  if (params.page) query.set('page', String(params.page));
+  if (params.limit) query.set('limit', String(params.limit));
+  if (params.source) query.set('source', params.source);
+  if (params.week) query.set('week', params.week);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return apiFetch<AssociationTransactionsResponse>(
+    `/associations/${encodeURIComponent(associationId)}/transactions${suffix}`,
+  );
+};
+
+export const verifyAssociationPayment = async (
+  associationId: string,
+  payload: VerifyAssociationPaymentPayload,
+) =>
+  apiFetch<VerifyAssociationPaymentResponse>(
+    `/associations/${encodeURIComponent(associationId)}/verify-payment`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+  );
 
 // ─── Clinic — identity ────────────────────────────────────────────────────────
 

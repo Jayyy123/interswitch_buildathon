@@ -151,6 +151,20 @@ export class TermiiService {
 
   // ─── Claim paid ───────────────────────────────────────────────────────────
 
+  async sendClaimConfirmed(
+    phone: string,
+    memberName: string,
+    amount: number,
+    hospitalName: string,
+  ): Promise<void> {
+    await this.send(
+      phone,
+      `OmoHealth: Hi ${memberName}, your claim has been confirmed.\n` +
+        `N${amount.toLocaleString('en-NG')} will be paid to ${hospitalName}.\n` +
+        `We wish you quick recovery.`,
+    );
+  }
+
   async sendClaimPaidSms(
     phone: string,
     amount: number,

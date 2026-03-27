@@ -25,3 +25,9 @@ export const formatNgn = (amount: number) =>
     currency: 'NGN',
     maximumFractionDigits: 0,
   }).format(amount);
+
+export const PLAN_WEEKLY_CONTRIBUTION: Record<'BRONZE' | 'SILVER' | 'GOLD', number> = {
+  BRONZE: 200,
+  SILVER: 400,
+  GOLD: 700,
+};

@@ -7,8 +7,7 @@ import { FileImage, FileText, ShieldCheck } from 'lucide-react';
 import { SectionCard } from '@/components/section-card';
 import { StatusBadge } from '@/components/status-badge';
 import { buttonVariants } from '@/components/ui/button-variants';
-import { ApiError, getClaimById } from '@/lib/api';
-import type { ClaimDetail } from '@/lib/auth-types';
+import { ApiError, getAssociationClaimById } from '@/lib/api';
 import { claimStatusLabel, claimStatusTone, formatNgn } from '@/lib/claim-ui';
 
 type Props = {
@@ -17,12 +16,9 @@ type Props = {
 };
 
 export const AssociationClaimDetail = ({ associationId, claimId }: Props) => {
-  const claimQuery = useQuery<ClaimDetail, ApiError>({
-    queryKey: ['claim-detail', claimId],
-    queryFn: async () => {
-      const claim = await getClaimById(claimId);
-      return claim;
-    },
+  const claimQuery = useQuery({
+    queryKey: ['association-claim-detail', associationId, claimId],
+    queryFn: () => getAssociationClaimById(associationId, claimId),
   });
 
   if (claimQuery.isPending) {
@@ -46,9 +42,7 @@ export const AssociationClaimDetail = ({ associationId, claimId }: Props) => {
   const claim = claimQuery.data;
   if (!claim) return null;
 
-  const memberLabel = claim.member.userId
-    ? `Member ${claim.member.id.slice(0, 8)}… (linked)`
-    : `Member ${claim.member.id.slice(0, 8)}…`;
+  const memberLabel = `${claim.member.name} (${claim.member.id.slice(0, 8)}...)`;
 
   return (
     <div className="space-y-6">
@@ -92,18 +86,7 @@ export const AssociationClaimDetail = ({ associationId, claimId }: Props) => {
 
       <SectionCard icon={FileImage} title="Bill evidence" description="Supporting bill image.">
         <div className="rounded-xl border border-dashed border-white/20 bg-black/20 p-8 text-center text-sm text-slate-300">
-          {claim.billPhotoUrl ? (
-            <a
-              href={claim.billPhotoUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-emerald-300 underline-offset-4 hover:underline"
-            >
-              View uploaded bill
-            </a>
-          ) : (
-            'No bill image uploaded yet.'
-          )}
+          No bill image URL returned from this endpoint.
         </div>
       </SectionCard>
 
@@ -114,16 +97,6 @@ export const AssociationClaimDetail = ({ associationId, claimId }: Props) => {
       ) : null}
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" disabled className={buttonVariants({ className: 'justify-center' })}>
-          Approve claim
-        </button>
-        <button
-          type="button"
-          disabled
-          className={buttonVariants({ variant: 'destructive', className: 'justify-center' })}
-        >
-          Decline claim
-        </button>
         <Link
           href={`/association/${associationId}/claims`}
           className={buttonVariants({ variant: 'outline', className: 'justify-center' })}
