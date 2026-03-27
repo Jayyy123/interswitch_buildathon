@@ -8,6 +8,7 @@ import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { TermiiService } from '../termii/termii.service';
+import { toE164 } from '../common/phone.util';
 import { SendOtpDto, VerifyOtpDto } from './dto/auth.dto';
 
 @Injectable()
@@ -20,24 +21,24 @@ export class AuthService {
 
   /**
    * Step 1: Generate OTP, store hashed, send via Termii SMS.
-   * Returns the raw code only in non-production (dev convenience).
+   * Phone normalised to E.164 before any DB write.
    */
   async sendOtp(dto: SendOtpDto): Promise<{ message: string; code?: string }> {
+    const phone = toE164(dto.phone);
     const rawCode = Math.floor(100000 + Math.random() * 900000).toString();
     const hashedCode = await bcrypt.hash(rawCode, 10);
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-    // Invalidate prior unused OTPs for this phone
     await this.prisma.otpCode.updateMany({
-      where: { phone: dto.phone, used: false },
+      where: { phone, used: false },
       data: { used: true },
     });
 
     await this.prisma.otpCode.create({
-      data: { phone: dto.phone, code: hashedCode, expiresAt },
+      data: { phone, code: hashedCode, expiresAt },
     });
 
-    await this.termiiService.sendOtp(dto.phone, rawCode);
+    await this.termiiService.sendOtp(phone, rawCode);
 
     return {
       message: 'OTP sent successfully',
@@ -47,12 +48,14 @@ export class AuthService {
 
   /**
    * Step 2: Verify OTP → issue JWT.
-   * Creates User row on first login.
-   * Wallet creation for IYALOJA happens at createAssociation (they need an association context).
+   * Creates User row on first login (phone stored as E.164).
+   * For CLINIC_ADMIN: returns clinicId if user already registered a clinic.
    */
   async verifyOtp(dto: VerifyOtpDto) {
+    const phone = toE164(dto.phone);
+
     const otpRecord = await this.prisma.otpCode.findFirst({
-      where: { phone: dto.phone, used: false, expiresAt: { gt: new Date() } },
+      where: { phone, used: false, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -61,35 +64,49 @@ export class AuthService {
     const codeMatch = await bcrypt.compare(dto.code, otpRecord.code);
     if (!codeMatch) throw new UnauthorizedException('Invalid or expired OTP');
 
-    await this.prisma.otpCode.update({ where: { id: otpRecord.id }, data: { used: true } });
+    await this.prisma.otpCode.update({
+      where: { id: otpRecord.id },
+      data: { used: true },
+    });
 
-    // Find or create User — isNewUser tells the UI to redirect to initial setup
-    let user = await this.prisma.user.findUnique({ where: { phone: dto.phone } });
+    let user = await this.prisma.user.findUnique({ where: { phone } });
     const isNewUser = !user;
     if (!user) {
       user = await this.prisma.user.create({
-        data: { phone: dto.phone, role: dto.role },
+        data: { phone, role: dto.role },
       });
     }
 
     if (user.role !== dto.role) {
-      throw new BadRequestException(`This phone is registered as ${user.role}, not ${dto.role}`);
+      throw new BadRequestException(
+        `This phone is registered as ${user.role}, not ${dto.role}`,
+      );
     }
 
-    // Check if setup is complete so UI knows which screen to show
+    // Look up clinic membership (if CLINIC_ADMIN)
     const [association, clinicAdmin] = await Promise.all([
-      this.prisma.association.findFirst({ where: { userId: user.id }, select: { id: true } }),
-      this.prisma.clinicAdmin.findFirst({ where: { userId: user.id }, select: { id: true } }),
+      this.prisma.association.findFirst({
+        where: { userId: user.id },
+        select: { id: true },
+      }),
+      this.prisma.clinicAdmin.findUnique({
+        where: { userId: user.id },
+        select: { id: true, clinicId: true },
+      }),
     ]);
 
-    const token = this.jwtService.sign({ sub: user.id, phone: user.phone, role: user.role });
+    const token = this.jwtService.sign({
+      sub: user.id,
+      phone: user.phone,
+      role: user.role,
+    });
     return {
       accessToken: token,
       user: { id: user.id, phone: user.phone, role: user.role },
-      // UI flags:
-      isNewUser,                              // true → redirect to onboarding/setup
-      hasAssociation: !!association,          // for IYALOJA: false → show create-association screen
-      hasClinic: !!clinicAdmin,              // for CLINIC_ADMIN: false → show create-clinic screen
+      isNewUser,
+      hasAssociation: !!association,
+      hasClinic: !!clinicAdmin,
+      clinicId: clinicAdmin?.clinicId ?? null, // UI uses this for /clinic/[clinicId] routing
     };
   }
 }
