@@ -138,11 +138,15 @@ export class MembersService {
 
     // Enqueue one BullMQ job per new member — retries on failure, visible in queue
     for (const memberId of newMemberIds) {
-      await this.walletQueue.add(
-        PROVISION_MEMBER_WALLET,
-        { memberId },
-        { jobId: `member-wallet-${memberId}`, removeOnComplete: true, removeOnFail: 100 },
-      );
+      try {
+        await this.walletQueue.add(
+          PROVISION_MEMBER_WALLET,
+          { memberId },
+          { jobId: `member-wallet-${memberId}`, removeOnComplete: true, removeOnFail: 100 },
+        );
+      } catch (err) {
+        this.logger.warn(`Wallet job not queued for ${memberId} (Redis unavailable): ${err?.message}`);
+      }
     }
 
     return {
@@ -256,11 +260,15 @@ export class MembersService {
     });
 
     // Enqueue a BullMQ retry job — processor handles ISW call with built-in retries
-    await this.walletQueue.add(
-      PROVISION_MEMBER_WALLET,
-      { memberId },
-      { jobId: `member-wallet-retry-${memberId}-${Date.now()}`, removeOnComplete: true, removeOnFail: 100 },
-    );
+    try {
+      await this.walletQueue.add(
+        PROVISION_MEMBER_WALLET,
+        { memberId },
+        { jobId: `member-wallet-retry-${memberId}-${Date.now()}`, removeOnComplete: true, removeOnFail: 100 },
+      );
+    } catch (err) {
+      this.logger.warn(`Retry wallet job not queued (Redis unavailable): ${err?.message}`);
+    }
 
     return { message: 'Wallet provisioning queued. SMS will be sent when ready.' };
   }

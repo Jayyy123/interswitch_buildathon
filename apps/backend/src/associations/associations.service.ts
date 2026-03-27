@@ -82,16 +82,20 @@ export class AssociationsService {
     // Enqueue pool wallet provisioning via BullMQ — retries on ETIMEDOUT automatically
     const assocDigits = association.id.replace(/[^0-9]/g, '').padEnd(7, '0').slice(0, 7);
     const poolPhone   = `0803${assocDigits}`;
-    await this.walletQueue.add(
-      PROVISION_POOL_WALLET,
-      {
-        associationId: association.id,
-        name:  `${dto.name} Pool`,
-        phone: poolPhone,
-        email: `pool-${association.id}@omohealth.ng`,
-      },
-      { jobId: `pool-wallet-${association.id}`, removeOnComplete: true, removeOnFail: 100 },
-    );
+    try {
+      await this.walletQueue.add(
+        PROVISION_POOL_WALLET,
+        {
+          associationId: association.id,
+          name:  `${dto.name} Pool`,
+          phone: poolPhone,
+          email: `pool-${association.id}@omohealth.ng`,
+        },
+        { jobId: `pool-wallet-${association.id}`, removeOnComplete: true, removeOnFail: 100 },
+      );
+    } catch (err) {
+      this.logger.warn(`Pool wallet job not queued (Redis unavailable): ${err?.message}`);
+    }
 
     return this.prisma.association.findUnique({ where: { id: association.id } });
   }

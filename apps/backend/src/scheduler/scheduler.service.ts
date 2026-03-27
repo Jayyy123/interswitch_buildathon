@@ -15,23 +15,34 @@ export class SchedulerService implements OnModuleInit {
   /**
    * On startup, register (or confirm) the repeatable weekly debit job.
    * Runs every Monday at 08:00 WAT (07:00 UTC).
-   * BullMQ deduplicates by key — safe to call on every restart.
+   * Wrapped in try/catch so a missing Redis does NOT crash the app.
+   * Once REDIS_URL is set in Railway env, the next deploy will register the job.
    */
   async onModuleInit(): Promise<void> {
-    await this.weeklyDebitQueue.add(
-      WEEKLY_DEBIT_JOB,
-      {}, // no payload needed — processor reads from DB
-      {
-        repeat: {
-          pattern: '0 7 * * 1',  // Monday 08:00 WAT (07:00 UTC)
-          tz: 'Africa/Lagos',
+    // Suppress BullMQ "Connection is closed" from becoming an uncaught exception
+    (this.weeklyDebitQueue as any).on?.('error', () => { /* Redis not yet available */ });
+
+    try {
+      await this.weeklyDebitQueue.add(
+        WEEKLY_DEBIT_JOB,
+        {}, // no payload needed — processor reads from DB
+        {
+          repeat: {
+            pattern: '0 7 * * 1',  // Monday 08:00 WAT (07:00 UTC)
+            tz: 'Africa/Lagos',
+          },
+          jobId: 'weekly-debit-repeatable', // stable ID prevents duplicate schedules
+          removeOnComplete: 50,
+          removeOnFail: 200,
         },
-        jobId: 'weekly-debit-repeatable', // stable ID prevents duplicate schedules
-        removeOnComplete: 50,
-        removeOnFail: 200,
-      },
-    );
-    this.logger.log('Weekly debit repeatable job registered (Monday 08:00 WAT)');
+      );
+      this.logger.log('Weekly debit repeatable job registered (Monday 08:00 WAT)');
+    } catch (err) {
+      this.logger.warn(
+        'Redis unavailable — weekly debit job NOT scheduled. Set REDIS_URL in Railway and redeploy.',
+        err?.message,
+      );
+    }
   }
 
   /**
