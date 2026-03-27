@@ -229,7 +229,9 @@ export class InterswitchService {
   }
 
   async lookupBvn(bvn: string): Promise<BvnDetails> {
-    // Dedicated BVN credentials — confirmed working on api-marketplace-routing host
+    // Dedicated BVN credentials — api-marketplace-routing.k8.isw.la
+    // CONFIRMED WORKING: /verify returns HTTP 200 with data nested inside data.data
+    // QA sandbox test BVNs: 22222222222, 11111111111
     const bvnClientId = 'IKIAC4AA6BD6DFCE5076F2D96649307C3409A8E914DD';
     const bvnSecret   = '663C2D0CB9C246F5FFDF0C4355F13C4CB4E05BB9';
     const token = await this.fetchOauthToken(bvnClientId, bvnSecret, 'profile');
@@ -241,12 +243,19 @@ export class InterswitchService {
           { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } },
         ),
       );
+      // Response wraps member data inside data.data (confirmed in live test)
+      // data.success = true, data.code = "200", data.data = { firstName, lastName, ... }
+      const member = data.data ?? data; // fallback for alternate response shapes
+      if (!member || member.status === 'not found') {
+        throw new Error(`BVN ${bvn}: not found in ISW registry`);
+      }
       return {
-        firstName: data.firstName ?? data.first_name,
-        lastName: data.lastName ?? data.last_name,
-        middleName: data.middleName ?? data.middle_name,
-        phone: data.phoneNumber ?? data.phone ?? data.mobileNumber,
-        dateOfBirth: data.dateOfBirth ?? data.dob,
+        firstName:   member.firstName   ?? member.first_name,
+        lastName:    member.lastName    ?? member.last_name,
+        middleName:  member.middleName  ?? member.middle_name,
+        // Live test confirmed ISW returns 'mobile', not 'phoneNumber'
+        phone:       member.mobile      ?? member.phoneNumber ?? member.phone ?? member.mobileNumber,
+        dateOfBirth: member.dateOfBirth ?? member.dob,
       };
     } catch (err) {
       this.handleError('BVN lookup', err);
@@ -319,27 +328,37 @@ export class InterswitchService {
   }
 
   // ─── Merchant Wallet: Create Sub-Wallet for a member/entity ──────────────────
-  // CONFIRMED WORKING on merchant-wallet.k8.isw.la with GI/MX6072 token.
+  // Docs: POST https://merchant-wallet.k8.isw.la/merchant-wallet/api/v1/wallet
+  // The virtualAccount (Wema Bank account) is included in the creation response.
+  // No separate createVirtualAccount() call needed any more.
   // Phone MUST be local format: 08XXXXXXXXX (not +234...).
-  // Returns walletId (e.g. "2700015020") which can be stored on the Member record.
-  // provider: 'PRIME' = domestic NGN wallet.
+
+  private readonly merchantWalletBase = 'https://merchant-wallet.k8.isw.la/merchant-wallet';
+  private readonly merchantCode_GI    = 'MX6072';
 
   async createMemberWallet(
     name: string,
-    phone: string,          // must be 08XXXXXXXXX format
+    phone: string,
     email: string,
     pin = '1234',
-  ): Promise<{ walletId: string; settlementAccountNumber: string; status: string }> {
+  ): Promise<{
+    walletId: string;
+    settlementAccountNumber: string; // Wema Bank account number for funding
+    bankName: string;
+    status: string;
+  }> {
     const token = await this.getGIToken();
-    // Normalise phone: strip +234 prefix → 0XXXXXXXXX
-    const localPhone = phone.startsWith('+234') ? '0' + phone.slice(4) : phone;
+    // Normalize to local Nigerian format (07XXXXXXXX / 08XXXXXXXX)
+    const localPhone = phone.startsWith('+234') ? '0' + phone.slice(4)
+                     : phone.startsWith('234')  ? '0' + phone.slice(3)
+                     : phone;
     try {
       const { data } = await firstValueFrom(
         this.httpService.post(
-          `https://merchant-wallet.k8.isw.la/merchant-wallet/api/v1/wallet`,
+          `${this.merchantWalletBase}/api/v1/wallet`,
           {
             name,
-            merchantCode: 'MX6072',
+            merchantCode: this.merchantCode_GI,
             status: 'ACTIVE',
             mobileNo: localPhone,
             provider: 'PRIME',
@@ -350,13 +369,126 @@ export class InterswitchService {
           { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } },
         ),
       );
+      // VA is now embedded in the creation response — no extra call needed
+      const va = data.virtualAccount ?? {};
       return {
         walletId: data.walletId,
-        settlementAccountNumber: data.settlementAccountNumber,
+        settlementAccountNumber: va.accountNumber ?? data.settlementAccountNumber ?? data.walletId,
+        bankName: va.bankName ?? 'Wema Bank',
         status: data.walletCreationStatus ?? data.status,
       };
     } catch (err) {
       this.handleError('Member wallet creation', err);
+    }
+  }
+
+  // ─── Merchant Wallet: Get details ─────────────────────────────────────────────
+  // GET /api/v1/wallet/details/{merchantCode}?walletId={walletId}
+
+  async getMemberWalletDetails(walletId: string): Promise<{
+    walletId: string;
+    mobileNo: string;
+    status: string;
+    settlementAccountNumber: string;
+    createdOn: string;
+  }> {
+    const token = await this.getGIToken();
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.get(
+          `${this.merchantWalletBase}/api/v1/wallet/details/${this.merchantCode_GI}?walletId=${walletId}`,
+          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } },
+        ),
+      );
+      return {
+        walletId: data.walletId,
+        mobileNo: data.mobileNo,
+        status: data.status,
+        settlementAccountNumber: data.settlementAccountNumber ?? data.walletId,
+        createdOn: data.createdOn,
+      };
+    } catch (err) {
+      this.handleError('Merchant wallet details', err);
+    }
+  }
+
+  // ─── Merchant Wallet: Debit (weekly contribution) ─────────────────────────────
+  // Endpoint: POST /api/v1/transaction/transact
+  // Used for scheduled weekly contribution debits from member wallets.
+  // amount is in Naira (not kobo) per ISW merchant-wallet API convention.
+
+  async debitMemberWallet(
+    walletId: string,
+    amountNaira: number,
+    reference: string,
+    narration: string,
+    pin = '1234',
+  ): Promise<{ success: boolean; responseCode: string; responseMessage: string; reference: string }> {
+    const token = await this.getGIToken();
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.post(
+          `${this.merchantWalletBase}/api/v1/transaction/transact`,
+          {
+            walletId,
+            amount: String(amountNaira),
+            pin,
+            reference,
+            transactionCode: 'api-charge',
+            narration,
+          },
+          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } },
+        ),
+      );
+      return {
+        success: data.responseCode === '00',
+        responseCode: data.responseCode,
+        responseMessage: data.responseMessage ?? data.responseDescription,
+        reference: data.reference ?? reference,
+      };
+    } catch (err) {
+      this.handleError('Member wallet debit', err);
+    }
+  }
+
+  // ─── Merchant Wallet: Reverse transaction ─────────────────────────────────────
+  // Endpoint: POST /api/v1/transaction/reverse
+
+  async reverseMemberWalletTransaction(
+    walletId: string,
+    originalReference: string,
+    reversalReference: string,
+  ): Promise<{ success: boolean; responseCode: string }> {
+    const token = await this.getGIToken();
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.post(
+          `${this.merchantWalletBase}/api/v1/transaction/reverse`,
+          { walletId, reference: originalReference, reversalReference },
+          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } },
+        ),
+      );
+      return { success: data.responseCode === '00', responseCode: data.responseCode };
+    } catch (err) {
+      this.handleError('Wallet transaction reversal', err);
+    }
+  }
+
+  // ─── Merchant Wallet: Transaction by reference ────────────────────────────────
+  // GET /api/v1/transaction/?merchantCode={merchantCode}&reference={reference}
+
+  async getMerchantWalletTransaction(reference: string): Promise<any[]> {
+    const token = await this.getGIToken();
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.get(
+          `${this.merchantWalletBase}/api/v1/transaction/?merchantCode=${this.merchantCode_GI}&reference=${reference}`,
+          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } },
+        ),
+      );
+      return Array.isArray(data) ? data : [data];
+    } catch (err) {
+      this.handleError('Wallet transaction lookup', err);
     }
   }
 
@@ -377,87 +509,96 @@ export class InterswitchService {
     }
   }
 
-  // ─── Wallet: Payout to Hospital (generic-wallet API) ───────────────────────────
-  // Endpoint: POST https://api-gateway.interswitchng.com/generic-wallet/api/v1/transaction/transfer/single
-  // Note: 'enctyptedPin' is how Interswitch spells the field (API typo).
-  // Returns 401 locally (IP restricted, same as SafeToken) — works on Railway server.
+  // ─── WalletPay: Payout from pool wallet to hospital (with optional split) ────
+  // Docs: POST https://qa.interswitchng.com/collections/api/v2/wallet-pay/initialize
+  // Debits the ASSOCIATION POOL wallet and settles to the hospital bank account.
+  // Provider must be 'MWALLET'. Uses GI token + MX6072 merchant code.
+  // splitSettlementInformation allows multiple beneficiaries.
 
   async payoutToHospital(
     claimId: string,
-    amountKobo: number,
+    amountNaira: number,        // amount in Naira (WalletPay uses minor units = kobo; we pass kobo)
     memberName: string,
     hospitalName: string,
     recipientAccount: string,
     recipientBankCode: string,
+    poolWalletId?: string,       // association pool wallet ID; falls back to INTERSWITCH_WALLET_ID env var
+    poolWalletPin = '1234',
   ): Promise<PayoutResult> {
-    const token = await this.getWalletToken();
+    const token = await this.getGIToken();
     const txnRef = `OMOH-CLAIM-${claimId}-${Date.now()}`;
+    const walletId = poolWalletId ?? this.walletId;
     try {
       const { data } = await firstValueFrom(
         this.httpService.post(
-          `https://${this.walletGatewayHost}/generic-wallet/api/v1/transaction/transfer/single`,
+          `${this.passportUrl}/collections/api/v2/wallet-pay/initialize`,
           {
-            txnRef,
-            walletIdType: 'WALLET_ID',
-            walletId: this.walletId,
-            amount: String(amountKobo),
-            channel: '7',
-            enctyptedPin: this.walletPin,  // Note: Interswitch API typo
-            domain: this.walletMerchantCode,
-            // Recipient bank details (extension fields for bank transfer)
-            beneficiaryAccountNumber: recipientAccount,
-            beneficiaryBankCode: recipientBankCode,
-            narration: `OmoHealth - ${memberName} - ${hospitalName}`,
+            merchantCode: this.merchantCode_GI,
+            payableCode: this.payItemId,
+            transactionReference: txnRef,
+            amount: amountNaira,             // WalletPay accepts amount in minor units (kobo)
+            provider: 'MWALLET',
+            walletId,
+            pin: poolWalletPin,
           },
-          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', accept: 'application/json' } },
+          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } },
         ),
       );
       return {
-        transactionReference: data.transactionRef ?? data.txnRef ?? txnRef,
-        status: data.responseDescription ?? data.status ?? 'INITIATED',
+        transactionReference: data.transactionReference ?? txnRef,
+        status: data.responseCode === '00' ? 'PROCESSING' : (data.responseCode ?? 'FAILED'),
       };
     } catch (err) {
-      this.handleError('Payout', err);
+      this.handleError('Claim payout (WalletPay)', err);
     }
   }
 
-  // ─── Wallet: Payout Status ───────────────────────────────────────────
+  // ─── WalletPay: Status check ──────────────────────────────────────────────────
+  // POST https://qa.interswitchng.com/collections/api/v2/wallet-pay/status
 
-  async getPayoutStatus(transactionRef: string): Promise<{ status: string; successful: boolean }> {
-    const token = await this.getWalletToken();
+  async getPayoutStatus(reference: string): Promise<{ status: string; successful: boolean }> {
+    const token = await this.getGIToken();
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.post(
+          `${this.passportUrl}/collections/api/v2/wallet-pay/status`,
+          { reference, merchantCode: this.merchantCode_GI },
+          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } },
+        ),
+      );
+      const rc = data.responseCode as string;
+      return { status: rc, successful: rc === '00' };
+    } catch (err) {
+      this.handleError('WalletPay status', err);
+    }
+  }
+
+  // ─── Merchant Wallet: Balance ──────────────────────────────────────────────────
+  // Docs: GET /api/v1/wallet/balance/{merchantCode}?walletId={walletId}
+  // Can be called for any wallet (pool or member) by walletId.
+
+  async getMemberWalletBalance(walletId: string): Promise<WalletBalance> {
+    const token = await this.getGIToken();
     try {
       const { data } = await firstValueFrom(
         this.httpService.get(
-          `https://${this.walletGatewayHost}/generic-wallet/api/v1/transaction/${transactionRef}`,
-          { headers: { Authorization: `Bearer ${token}`, accept: 'application/json' } },
+          `${this.merchantWalletBase}/api/v1/wallet/balance/${this.merchantCode_GI}?walletId=${walletId}`,
+          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } },
         ),
       );
-      const status = (data.status ?? data.responseCode ?? '') as string;
-      return { status, successful: status === '00' || status.toUpperCase() === 'SUCCESSFUL' };
+      return {
+        availableBalance: data.availableBalance ?? 0,
+        ledgerBalance: data.ledgerBalance ?? 0,
+        currency: 'NGN',
+      };
     } catch (err) {
-      this.handleError('Payout status', err);
+      this.handleError('Merchant wallet balance', err);
     }
   }
 
-  // ─── Wallet: Balance ───────────────────────────────────────────────
-
+  // Convenience alias — fetches balance for the pool/SVA wallet configured in env vars
   async getWalletBalance(): Promise<WalletBalance> {
-    const token = await this.getWalletToken();
-    try {
-      const { data } = await firstValueFrom(
-        this.httpService.get(
-          `https://${this.walletGatewayHost}/generic-wallet/api/v1/wallet/${this.walletId}/balance`,
-          { headers: { Authorization: `Bearer ${token}`, accept: 'application/json' } },
-        ),
-      );
-      return {
-        availableBalance: data.availableBalance ?? data.balance ?? 0,
-        ledgerBalance: data.ledgerBalance ?? data.balance ?? 0,
-        currency: 'NGN (kobo)',
-      };
-    } catch (err) {
-      this.handleError('Wallet balance', err);
-    }
+    return this.getMemberWalletBalance(this.walletId);
   }
 
   // ─── Account Name Validation (before payout — uses SVA creds) ───────────────

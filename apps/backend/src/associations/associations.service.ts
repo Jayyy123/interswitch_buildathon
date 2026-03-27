@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -8,7 +9,33 @@ import { PlanTier, UserRole } from '@prisma/client';
 import { InterswitchService } from '../interswitch/interswitch.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TermiiService } from '../termii/termii.service';
-import { CreateAssociationDto, VerifyPaymentDto } from './dto/associations.dto';
+import {
+  ClaimsQueryDto,
+  CreateAssociationDto,
+  MembersQueryDto,
+  TransactionsQueryDto,
+  VerifyPaymentDto,
+} from './dto/associations.dto';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const PLAN_WEEKLY_AMOUNTS: Record<string, number> = {
+  BRONZE: 200,
+  SILVER: 400,
+  GOLD:   700,
+};
+
+const PLAN_COVERAGE_LIMITS: Record<string, number> = {
+  BRONZE: 75_000,
+  SILVER: 150_000,
+  GOLD:   300_000,
+};
+
+function paginate(page?: string, limit?: string) {
+  const p = Math.max(1, parseInt(page ?? '1', 10));
+  const l = Math.min(100, Math.max(1, parseInt(limit ?? '20', 10)));
+  return { skip: (p - 1) * l, take: l, page: p, limit: l };
+}
 
 @Injectable()
 export class AssociationsService {
@@ -20,40 +47,23 @@ export class AssociationsService {
     private readonly termii: TermiiService,
   ) {}
 
-  /**
-   * Creates a new association for an Iyaloja.
-   * Also auto-creates:
-   *   1. Pool wallet (Association.walletId + walletAccountNumber) — the shared health fund
-   *   2. Iyaloja's personal member wallet (Member.walletId + walletAccountNumber)
-   *      stored on the Iyaloja's own Member record, if they are also enrolled as a member.
-   */
-  async createAssociation(
-    dto: CreateAssociationDto,
-    userId: string,
-    jwtPhone?: string,
-  ) {
-    // Ensure we have a valid owner user row before creating the association.
+  // ─── Create association ────────────────────────────────────────────────────
+
+  async createAssociation(dto: CreateAssociationDto, userId: string, jwtPhone?: string) {
     let user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user && jwtPhone) {
       user = await this.prisma.user.findUnique({ where: { phone: jwtPhone } });
     }
     if (!user && jwtPhone) {
       user = await this.prisma.user.create({
-        data: {
-          phone: jwtPhone,
-          role: UserRole.IYALOJA,
-        },
+        data: { phone: jwtPhone, role: UserRole.IYALOJA },
       });
     }
-    if (!user) {
-      throw new UnauthorizedException('Invalid session. Please login again.');
-    }
-    const ownerUserId = user.id;
+    if (!user) throw new UnauthorizedException('Invalid session. Please login again.');
 
-    // Create the association first
     const association = await this.prisma.association.create({
       data: {
-        userId: ownerUserId,
+        userId: user.id,
         name: dto.name,
         cacNumber: dto.cacNumber,
         plan: (dto.plan as PlanTier) ?? PlanTier.BRONZE,
@@ -63,14 +73,10 @@ export class AssociationsService {
       },
     });
 
-    // Auto-create pool wallet.
-    // IMPORTANT: ISW rejects duplicate mobileNo — do NOT use the Iyaloja's real phone.
-    // Derive a deterministic unique local-format phone from the association UUID digits.
-    const assocDigits = association.id
-      .replace(/[^0-9]/g, '')
-      .padEnd(8, '0')
-      .slice(0, 8);
-    const poolPhone = `080${assocDigits}`; // e.g. 08009876564 — unique per association
+    // Auto-create pool wallet — phone must be valid Nigerian format (0803XXXXXXX = MTN)
+    // ISW rejects 080XXXXXXX prefix; use 0803 (confirmed working in live test)
+    const assocDigits = association.id.replace(/[^0-9]/g, '').padEnd(7, '0').slice(0, 7);
+    const poolPhone = `0803${assocDigits}`;
     try {
       const poolWallet = await this.interswitch.createMemberWallet(
         `${dto.name} Pool`,
@@ -84,126 +90,51 @@ export class AssociationsService {
           walletAccountNumber: poolWallet.settlementAccountNumber,
         },
       });
-      this.logger.log(
-        `Pool wallet created for association ${association.id}: ${poolWallet.walletId}`,
-      );
+      this.logger.log(`Pool wallet created for association ${association.id}: ${poolWallet.walletId}`);
     } catch (err) {
-      this.logger.warn(
-        `Pool wallet creation failed for ${association.id}: ${err?.message ?? JSON.stringify(err)}`,
-      );
+      this.logger.warn(`Pool wallet creation failed for ${association.id}: ${err?.message}`);
     }
 
-    // If iyaloja is also enrolled as a member in their own association, create their personal wallet
-    if (user?.phone) {
-      try {
-        const existingMember = await this.prisma.member.findFirst({
-          where: { associationId: association.id, phone: user.phone },
-        });
-        if (existingMember && !existingMember.walletId) {
-          const personalWallet = await this.interswitch.createMemberWallet(
-            user.phone,
-            user.phone,
-            `member-${existingMember.id}@omohealth.ng`,
-          );
-          await this.prisma.member.update({
-            where: { id: existingMember.id },
-            data: {
-              walletId: personalWallet.walletId,
-              walletAccountNumber: personalWallet.settlementAccountNumber,
-            },
-          });
-        }
-      } catch (err) {
-        this.logger.warn(
-          `Iyaloja member wallet creation failed: ${err?.message}`,
-        );
-      }
-    }
-
-    return this.prisma.association.findUnique({
-      where: { id: association.id },
-    });
+    return this.prisma.association.findUnique({ where: { id: association.id } });
   }
 
-  async getAssociation(id: string, userId: string) {
-    const association = await this.prisma.association.findFirst({
-      where: { id, userId },
-    });
-    if (!association) throw new NotFoundException('Association not found');
+  // ─── List associations (role-aware) ───────────────────────────────────────
 
-    const [members, claims, contributions] = await Promise.all([
-      this.prisma.member.findMany({
-        where: { associationId: id },
-        select: {
-          id: true,
-          name: true,
-          phone: true,
-          status: true,
-          enrolledAt: true,
-          walletId: true,
-          walletAccountNumber: true,
-        },
-        orderBy: { enrolledAt: 'desc' },
-        take: 50,
-      }),
-      this.prisma.claim.findMany({
-        where: { associationId: id },
-        orderBy: { createdAt: 'desc' },
-        take: 10,
-      }),
-      this.prisma.contribution.aggregate({
-        where: { associationId: id, status: 'SUCCESS' },
-        _sum: { amount: true },
-      }),
-    ]);
-
-    return {
-      ...association,
-      memberCount: members.length,
-      members,
-      recentClaims: claims,
-      totalContributed: contributions._sum.amount ?? 0,
-    };
-  }
-
-  /**
-   * GET /associations
-   * - IYALOJA → returns associations they own (created)
-   * - MEMBER   → returns the association(s) they are enrolled in
-   *              (matched via their User.phone → Member.phone)
-   * - CLINIC_ADMIN → returns [] (no association ownership)
-   */
   async listAssociations(userId: string, role: string) {
     if (role === 'IYALOJA') {
       const associations = await this.prisma.association.findMany({
         where: { userId },
+        select: {
+          id: true, name: true, plan: true, walletId: true,
+          walletAccountNumber: true, poolBalance: true, createdAt: true,
+          _count: { select: { members: true } },
+        },
         orderBy: { createdAt: 'desc' },
       });
-      return Promise.all(
-        associations.map(async (a) => {
-          const memberCount = await this.prisma.member.count({
-            where: { associationId: a.id },
-          });
-          return { ...a, memberCount, userRole: 'OWNER' };
-        }),
-      );
+      return associations.map((a) => ({
+        ...a,
+        memberCount: a._count.members,
+        userRole: 'OWNER',
+        _count: undefined,
+      }));
     }
 
     if (role === 'MEMBER') {
-      // Look up the user's phone, then find any member records with that phone
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
         select: { phone: true },
       });
       if (!user) return [];
-      // Normalise: strip +234 → 0XXXXXXXXX for matching
-      const localPhone = user.phone.startsWith('+234')
-        ? '0' + user.phone.slice(4)
-        : user.phone;
+      const localPhone = user.phone.startsWith('+234') ? '0' + user.phone.slice(4)
+                       : user.phone.startsWith('234')  ? '0' + user.phone.slice(3)
+                       : user.phone;
       const members = await this.prisma.member.findMany({
         where: { phone: { in: [user.phone, localPhone] } },
-        include: {
-          association: true,
+        select: {
+          id: true, status: true, walletId: true, walletAccountNumber: true,
+          association: {
+            select: { id: true, name: true, plan: true, poolBalance: true, walletId: true },
+          },
         },
       });
       return members.map((m) => ({
@@ -219,21 +150,205 @@ export class AssociationsService {
     return [];
   }
 
-  async verifyAndCreditPool(id: string, dto: VerifyPaymentDto, userId: string) {
-    const association = await this.prisma.association.findFirst({
-      where: { id, userId },
-    });
-    if (!association) throw new NotFoundException('Association not found');
+  // ─── Dashboard stats (lean — no arrays) ───────────────────────────────────
 
-    const result = await this.interswitch.verifyPayment(
-      dto.transactionReference,
-      dto.amountKobo,
-    );
+  async getDashboard(id: string, userId: string) {
+    const association = await this._ownerOrThrow(id, userId);
+
+    const [activeCount, pausedCount, flaggedCount, totalPaidOut] = await Promise.all([
+      this.prisma.member.count({ where: { associationId: id, status: 'ACTIVE' } }),
+      this.prisma.member.count({ where: { associationId: id, status: 'PAUSED' } }),
+      this.prisma.member.count({ where: { associationId: id, consecutiveMissedPayments: { gte: 3 } } }),
+      this.prisma.claim.aggregate({
+        where: { associationId: id, status: 'PAID' },
+        _sum: { approvedAmount: true },
+      }),
+    ]);
+
+    // Next Monday at 07:00 WAT
+    const now = new Date();
+    const daysUntilMonday = (8 - now.getDay()) % 7 || 7;
+    const nextDebit = new Date(now);
+    nextDebit.setDate(now.getDate() + daysUntilMonday);
+    nextDebit.setHours(7, 0, 0, 0);
+
+    return {
+      poolBalance: association.poolBalance,
+      activeMemberCount: activeCount,
+      pausedMemberCount: pausedCount,
+      flaggedMemberCount: flaggedCount,
+      totalPaidOut: totalPaidOut._sum.approvedAmount ?? 0,
+      nextDebitDate: nextDebit.toISOString(),
+      plan: association.plan,
+      name: association.name,
+    };
+  }
+
+  // ─── Wallet details ────────────────────────────────────────────────────────
+
+  async getWallet(id: string, userId: string) {
+    const association = await this._ownerOrThrow(id, userId);
+    const weeklyTarget = await this.prisma.member.count({ where: { associationId: id, status: 'ACTIVE' } });
+    const weeklyAmount = PLAN_WEEKLY_AMOUNTS[association.plan] ?? 400;
+
+    // Contributions collected this current Monday-Sunday window
+    const monday = new Date();
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    monday.setHours(0, 0, 0, 0);
+    const collectedThisWeek = await this.prisma.contribution.aggregate({
+      where: { associationId: id, status: 'SUCCESS', createdAt: { gte: monday } },
+      _sum: { amount: true },
+    });
+
+    return {
+      walletId: association.walletId,
+      walletAccountNumber: association.walletAccountNumber,
+      poolBalance: association.poolBalance,
+      weeklyTarget: weeklyTarget * weeklyAmount,
+      collectedThisWeek: collectedThisWeek._sum.amount ?? 0,
+      weeklyAmountPerMember: weeklyAmount,
+    };
+  }
+
+  // ─── Members list (paginated + filtered) ──────────────────────────────────
+
+  async getMembers(id: string, userId: string, query: MembersQueryDto) {
+    await this._ownerOrThrow(id, userId);
+    const { skip, take, page, limit } = paginate(query.page, query.limit);
+
+    const where: Record<string, any> = { associationId: id };
+    if (query.status) where.status = query.status;
+    if (query.search) {
+      where.OR = [
+        { name: { contains: query.search, mode: 'insensitive' } },
+        { phone: { contains: query.search } },
+      ];
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.member.findMany({
+        where,
+        select: {
+          id: true, name: true, phone: true, status: true,
+          walletStatus: true, walletId: true, walletAccountNumber: true,
+          consecutiveMissedPayments: true, enrolledAt: true,
+        },
+        orderBy: { enrolledAt: 'desc' },
+        skip,
+        take,
+      }),
+      this.prisma.member.count({ where }),
+    ]);
+
+    return { data, total, page, limit };
+  }
+
+  // ─── Single member detail ─────────────────────────────────────────────────
+
+  async getMember(id: string, memberId: string, userId: string) {
+    await this._ownerOrThrow(id, userId);
+
+    const member = await this.prisma.member.findFirst({
+      where: { id: memberId, associationId: id },
+      include: {
+        contributions: {
+          select: { id: true, amount: true, status: true, source: true, week: true },
+          orderBy: { week: 'desc' },
+          take: 10,
+        },
+        wallet: { select: { interswitchRef: true, balance: true } },
+      },
+    });
+    if (!member) throw new NotFoundException('Member not found');
+
+    // Contribution streak: consecutive weeks from latest
+    const streak = this._calcStreak(member.contributions);
+
+    return {
+      id: member.id,
+      name: member.name,
+      phone: member.phone,
+      bvn: member.bvn,
+      status: member.status,
+      walletStatus: member.walletStatus,
+      walletId: member.walletId,
+      walletAccountNumber: member.walletAccountNumber,
+      bankAccount: member.wallet ? { accountNumber: member.wallet.interswitchRef, balance: member.wallet.balance } : null,
+      coverageUsedThisYear: member.coverageUsedThisYear,
+      consecutiveMissedPayments: member.consecutiveMissedPayments,
+      contributionStreak: streak,
+      enrolledAt: member.enrolledAt,
+      recentContributions: member.contributions,
+    };
+  }
+
+  // ─── Claims list (paginated + filtered) ───────────────────────────────────
+
+  async getClaims(id: string, userId: string, query: ClaimsQueryDto) {
+    await this._ownerOrThrow(id, userId);
+    const { skip, take, page, limit } = paginate(query.page, query.limit);
+
+    const where: Record<string, any> = { associationId: id };
+    if (query.status) where.status = query.status;
+
+    const [data, total] = await Promise.all([
+      this.prisma.claim.findMany({
+        where,
+        select: {
+          id: true, hospitalName: true, billAmount: true, approvedAmount: true,
+          status: true, description: true, createdAt: true,
+          member: { select: { id: true, name: true, phone: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+      this.prisma.claim.count({ where }),
+    ]);
+
+    return { data, total, page, limit };
+  }
+
+  // ─── Transactions list (paginated + filtered) ─────────────────────────────
+
+  async getTransactions(id: string, userId: string, query: TransactionsQueryDto) {
+    await this._ownerOrThrow(id, userId);
+    const { skip, take, page, limit } = paginate(query.page, query.limit);
+
+    const where: Record<string, any> = { associationId: id };
+    if (query.source) where.source = query.source;
+    if (query.week) {
+      const weekStart = new Date(query.week);
+      const weekEnd   = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 7);
+      where.week = { gte: weekStart, lt: weekEnd };
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.contribution.findMany({
+        where,
+        select: {
+          id: true, amount: true, status: true, source: true, week: true, createdAt: true,
+          member: { select: { id: true, name: true, phone: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+      this.prisma.contribution.count({ where }),
+    ]);
+
+    return { data, total, page, limit };
+  }
+
+  // ─── Verify payment + credit pool ─────────────────────────────────────────
+
+  async verifyAndCreditPool(id: string, dto: VerifyPaymentDto, userId: string) {
+    const association = await this._ownerOrThrow(id, userId);
+
+    const result = await this.interswitch.verifyPayment(dto.transactionReference, dto.amountKobo);
     if (!result.success) {
-      return {
-        success: false,
-        message: `Payment verification failed (code: ${result.responseCode})`,
-      };
+      return { success: false, message: `Payment verification failed (code: ${result.responseCode})` };
     }
 
     const amountNaira = dto.amountKobo / 100;
@@ -242,10 +357,25 @@ export class AssociationsService {
       data: { poolBalance: { increment: amountNaira } },
     });
 
-    return {
-      success: true,
-      credited: amountNaira,
-      newBalance: association.poolBalance + amountNaira,
-    };
+    return { success: true, credited: amountNaira, newBalance: association.poolBalance + amountNaira };
+  }
+
+  // ─── Private helpers ──────────────────────────────────────────────────────
+
+  private async _ownerOrThrow(id: string, userId: string) {
+    const association = await this.prisma.association.findFirst({
+      where: { id, userId },
+    });
+    if (!association) throw new NotFoundException('Association not found or not yours');
+    return association;
+  }
+
+  private _calcStreak(contributions: Array<{ status: string }>): number {
+    let streak = 0;
+    for (const c of contributions) {
+      if (c.status === 'SUCCESS') streak++;
+      else break;
+    }
+    return streak;
   }
 }

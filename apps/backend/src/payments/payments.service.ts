@@ -148,11 +148,15 @@ export class PaymentsService {
 
         // Notify member
         if (claim.member.phone) {
-          await this.termii.sendClaimConfirmed(
+          const planLimits: Record<string, number> = { BRONZE: 75_000, SILVER: 150_000, GOLD: 300_000 };
+          const coverageLimit = claim.association.coverageLimit ?? planLimits[claim.association.plan] ?? 75_000;
+          const remaining = Math.max(0, coverageLimit - (claim.member.coverageUsedThisYear + approvedAmount));
+          await this.termii.sendClaimPaidSms(
             claim.member.phone,
-            claim.member.name ?? 'Member',
             approvedAmount,
             claim.hospitalName,
+            new Date().toLocaleDateString('en-GB'),
+            remaining,
           );
         }
       } catch (err) {
