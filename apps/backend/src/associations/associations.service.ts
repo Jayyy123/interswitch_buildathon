@@ -51,7 +51,9 @@ export class AssociationsService {
     private readonly termii: TermiiService,
     @InjectQueue(WALLET_PROVISION_QUEUE)
     private readonly walletQueue: Queue,
-  ) {}
+  ) {
+    walletQueue.on('error', (err) => this.logger.warn('Wallet queue error:', err.message));
+  }
 
   // ─── Create association ────────────────────────────────────────────────────
 

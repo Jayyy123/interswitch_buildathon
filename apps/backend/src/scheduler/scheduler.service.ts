@@ -10,7 +10,10 @@ export class SchedulerService implements OnModuleInit {
   constructor(
     @InjectQueue(WEEKLY_DEBIT_QUEUE)
     private readonly weeklyDebitQueue: Queue,
-  ) {}
+  ) {
+    // Attach error listener immediately so BullMQ errors don't become uncaught exceptions
+    weeklyDebitQueue.on('error', (err) => this.logger.warn('Weekly debit queue error:', err.message));
+  }
 
   /**
    * On startup, register (or confirm) the repeatable weekly debit job.
@@ -19,9 +22,6 @@ export class SchedulerService implements OnModuleInit {
    * Once REDIS_URL is set in Railway env, the next deploy will register the job.
    */
   async onModuleInit(): Promise<void> {
-    // Suppress BullMQ "Connection is closed" from becoming an uncaught exception
-    (this.weeklyDebitQueue as any).on?.('error', () => { /* Redis not yet available */ });
-
     try {
       await this.weeklyDebitQueue.add(
         WEEKLY_DEBIT_JOB,
@@ -50,15 +50,19 @@ export class SchedulerService implements OnModuleInit {
    * Does NOT affect the scheduled repeatable job.
    */
   async triggerManualDebit(): Promise<{ message: string }> {
-    await this.weeklyDebitQueue.add(
-      WEEKLY_DEBIT_JOB,
-      { manual: true },
-      {
-        jobId: `manual-debit-${Date.now()}`,
-        removeOnComplete: true,
-        removeOnFail: 50,
-      },
-    );
+    try {
+      await this.weeklyDebitQueue.add(
+        WEEKLY_DEBIT_JOB,
+        { manual: true },
+        {
+          jobId: `manual-debit-${Date.now()}`,
+          removeOnComplete: true,
+          removeOnFail: 50,
+        },
+      );
+    } catch (err) {
+      this.logger.warn('Trigger debit failed (Redis unavailable):', err?.message);
+    }
     return { message: 'Weekly debit job queued — check logs for progress' };
   }
 }
