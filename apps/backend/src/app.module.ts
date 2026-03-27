@@ -19,13 +19,17 @@ import { WalletProvisionModule } from './wallet-provision/wallet-provision.modul
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
 
-    // BullMQ — Redis-backed job queues (weekly debits, payouts)
+    // BullMQ — Redis-backed job queues (weekly debits, wallet provisioning)
+    // REDIS_URL must be set in Railway env vars (add Redis service in Railway dashboard)
     BullModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         connection: {
-          url: config.get<string>('REDIS_URL', 'redis://localhost:6379'),
+          url:                  config.get<string>('REDIS_URL', 'redis://localhost:6379'),
+          lazyConnect:          true,  // don't crash startup if Redis isn't ready yet
+          enableOfflineQueue:   false, // fail fast rather than queue commands against dead conn
+          maxRetriesPerRequest: null,  // required for BullMQ workers
         },
         defaultJobOptions: {
           attempts: 5,
