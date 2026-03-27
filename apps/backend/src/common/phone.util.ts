@@ -1,47 +1,67 @@
 /**
- * Phone number normalization utilities.
+ * Nigerian phone number utilities — backed by Google's libphonenumber-js.
  *
- * All Nigerian phone numbers can arrive in 3 formats:
- *   - Local:         07060942709   (11 digits, starts with 0)
- *   - No-prefix:   2347060942709  (13 digits, starts with 234)
- *   - International: +2347060942709 (13 digits + '+')
+ * All functions assume Nigeria (NG) and reject any number that is not a valid
+ * Nigerian mobile number.
  *
  * ┌─────────────────┬──────────────────────────────────┐
  * │ Consumer        │ Required format                   │
  * ├─────────────────┼──────────────────────────────────┤
- * │ Termii SMS      │ +2347060942709 (international)   │
- * │ ISW Merchant    │ 07060942709   (local, starts 0)  │
+ * │ Termii SMS      │ +2348012345678  (E.164 / toE164) │
+ * │ ISW Merchant    │ 08012345678     (local / toLocal) │
  * │   Wallet API    │                                   │
  * └─────────────────┴──────────────────────────────────┘
  */
 
+import { BadRequestException } from '@nestjs/common';
+import {
+  parsePhoneNumberFromString,
+  type PhoneNumber,
+} from 'libphonenumber-js';
+
 /**
- * Normalise to international format for Termii: +2347060942709
+ * Parse and validate a Nigerian phone number.
+ * Accepts: 08012345678 | +2348012345678 | 2348012345678
+ * Throws 400 BadRequest if the number is not a valid NG number.
  */
-export function toInternational(phone: string): string {
-  const t = phone.trim().replace(/\s+/g, '');
-  if (t.startsWith('+234')) return t;
-  if (t.startsWith('234'))  return '+' + t;
-  if (t.startsWith('0'))    return '+234' + t.slice(1);
-  return t; // unknown — pass through
+export function parseNigerianPhone(raw: string): PhoneNumber {
+  const phone = parsePhoneNumberFromString(raw.trim(), 'NG');
+  if (!phone || !phone.isValid()) {
+    throw new BadRequestException(
+      `"${raw}" is not a valid Nigerian phone number. Use +2348XXXXXXXXX or 08XXXXXXXXX format.`,
+    );
+  }
+  return phone;
+}
+
+/** E.164 format for Termii SMS: +2348012345678 */
+export function toE164(raw: string): string {
+  return parseNigerianPhone(raw).format('E.164');
+}
+
+/** Alias — Termii service imports this name */
+export const toInternational = toE164;
+
+/** Local format for ISW Merchant Wallet: 08012345678 */
+export function toLocal(raw: string): string {
+  return parseNigerianPhone(raw).formatNational().replace(/\s/g, '');
 }
 
 /**
- * Normalise to local format for ISW Merchant Wallet: 07060942709
+ * Returns all storage variants of a Nigerian number so DB lookups match
+ * regardless of how the number was originally stored.
+ *
+ * Example: "08012345678" → ["+2348012345678", "08012345678"]
  */
-export function toLocal(phone: string): string {
-  const t = phone.trim().replace(/\s+/g, '');
-  if (t.startsWith('+234')) return '0' + t.slice(4);
-  if (t.startsWith('234'))  return '0' + t.slice(3);
-  if (t.startsWith('0'))    return t;
-  return t; // unknown — pass through
+export function phoneVariants(raw: string): string[] {
+  const phone = parseNigerianPhone(raw);
+  const e164     = phone.format('E.164');
+  const national = phone.formatNational().replace(/\s/g, '');
+  return Array.from(new Set([e164, national, raw.trim()]));
 }
 
-/**
- * Validate that a phone number is a plausible 11-digit Nigerian number.
- * Does NOT do a network/telco check — just structural validation.
- */
-export function isValidNigerianPhone(phone: string): boolean {
-  const local = toLocal(phone);
-  return /^0[7-9][01]\d{8}$/.test(local);
+/** Non-throwing structural validation. */
+export function isValidNigerianPhone(raw: string): boolean {
+  try { parseNigerianPhone(raw); return true; }
+  catch { return false; }
 }

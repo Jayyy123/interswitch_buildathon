@@ -173,41 +173,62 @@ model Contribution {
 }
 
 /// Hospital payout. Tracks money OUT of the pool.
-/// Flow: PENDING → APPROVED → PAID
-///                           ↘ FAILED (hospital transfer bounced)
-///       PENDING → REJECTED
+/// Flow: PENDING → PAID
+///                  ↘ FAILED (hospital transfer bounced)
 /// On PAID → Association.poolBalance decremented, Member.coverageUsedThisYear incremented.
 model Claim {
-  id              String      @id @default(uuid())
-  associationId   String
-  memberId        String
-  hospitalName    String
-  hospitalAccount String?     // bank account for Interswitch transfer
-  hospitalBankCode String?    // CBN bank code (e.g. "044" for Access Bank)
-  billAmount      Float       // what the hospital charged
-  approvedAmount  Float?      // capped at plan limit — what the pool pays
-  billPhotoUrl    String?     // Cloudinary URL (wired up later)
-  status          ClaimStatus @default(PENDING)
-  interswitchRef  String?     // Interswitch payment reference
-  otpVerified     Boolean     @default(false) // required for claims > ₦50,000
-  description     String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  id               String      @id @default(uuid())
+  associationId    String
+  memberId         String
+  clinicId         String?     // which clinic institution (set for portal-submitted claims)
+  clinicAdminId    String?     // which clinic admin submitted (set for portal-submitted claims)
+  hospitalName     String      // kept for display + manual/legacy claim compatibility
+  hospitalAccount  String?     // bank account for Interswitch transfer
+  hospitalBankCode String?     // CBN bank code (e.g. "044" for Access Bank)
+  billAmount       Float       // what the hospital charged
+  approvedAmount   Float?      // capped at plan limit — what the pool pays
+  billPhotoUrl     String?     // Cloudinary URL (wired up later)
+  status           ClaimStatus @default(PENDING)
+  interswitchRef   String?     // Interswitch payment reference
+  otpVerified      Boolean     @default(false)
+  description      String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
-  association Association @relation(fields: [associationId], references: [id])
-  member      Member      @relation(fields: [memberId], references: [id])
+  association  Association  @relation(fields: [associationId], references: [id])
+  member       Member       @relation(fields: [memberId], references: [id])
+  clinic       Clinic?      @relation(fields: [clinicId], references: [id])
+  clinicAdmin  ClinicAdmin? @relation(fields: [clinicAdminId], references: [id])
 
   @@map("claims")
 }
 
-/// Clinic staff who look up patient coverage via the Clinic Portal.
-/// Must log in via phone + OTP like all other users.
-model ClinicAdmin {
-  id         String @id @default(uuid())
-  userId     String @unique
-  clinicName String
+/// The clinic as an institution — name, address, bank payout details.
+model Clinic {
+  id          String  @id @default(uuid())
+  name        String
+  address     String?
+  bankAccount String? // clinic's bank account for direct payouts
+  bankCode    String? // CBN bank code
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id])
+  admins ClinicAdmin[]
+  claims Claim[]
+
+  @@map("clinics")
+}
+
+/// Join table: which User has access to which Clinic.
+model ClinicAdmin {
+  id       String @id @default(uuid())
+  clinicId String
+  userId   String @unique // one user → one clinic for now
+
+  clinic Clinic  @relation(fields: [clinicId], references: [id])
+  user   User    @relation(fields: [userId], references: [id])
+  claims Claim[]
 
   @@map("clinic_admins")
 }
+
