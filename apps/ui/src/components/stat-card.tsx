@@ -7,7 +7,7 @@ type StatCardProps = {
   icon?: LucideIcon;
 };
 
-export function StatCard({ label, value, hint, icon: Icon }: StatCardProps) {
+export const StatCard = ({ label, value, hint, icon: Icon }: StatCardProps) => {
   return (
     <article className="rounded-2xl border border-white/10 bg-linear-to-br from-white/8 to-white/3 p-4">
       <p className="inline-flex items-center gap-2 text-xs uppercase tracking-wide text-slate-300">
@@ -18,4 +18,4 @@ export function StatCard({ label, value, hint, icon: Icon }: StatCardProps) {
       {hint ? <p className="mt-1 text-xs text-slate-400">{hint}</p> : null}
     </article>
   );
-}
+};

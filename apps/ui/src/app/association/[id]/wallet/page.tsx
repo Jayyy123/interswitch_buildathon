@@ -3,7 +3,7 @@ import { PiggyBank, Target, WalletCards } from 'lucide-react';
 import { SectionCard } from '@/components/section-card';
 import { StatCard } from '@/components/stat-card';
 
-export default function AssociationWalletPage() {
+const AssociationWalletPage = () => {
   return (
     <div className="space-y-6">
       <section className="grid gap-3 sm:grid-cols-3">
@@ -42,4 +42,6 @@ export default function AssociationWalletPage() {
       </SectionCard>
     </div>
   );
-}
+};
+
+export default AssociationWalletPage;

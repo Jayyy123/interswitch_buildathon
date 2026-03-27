@@ -3,7 +3,7 @@ import { ClipboardPlus } from 'lucide-react';
 import { SectionCard } from '@/components/section-card';
 import { buttonVariants } from '@/components/ui/button-variants';
 
-export default function NewClinicClaimPage() {
+const NewClinicClaimPage = () => {
   return (
     <SectionCard
       icon={ClipboardPlus}
@@ -79,4 +79,6 @@ export default function NewClinicClaimPage() {
       </div>
     </SectionCard>
   );
-}
+};
+
+export default NewClinicClaimPage;

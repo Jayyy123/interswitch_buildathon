@@ -3,7 +3,7 @@ import { Building2, HeartPulse, UserPlus } from 'lucide-react';
 
 import { buttonVariants } from '@/components/ui/button-variants';
 
-export default function SignupPage() {
+const SignupPage = () => {
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-12 text-slate-100 sm:px-6">
       <div className="mx-auto w-full max-w-2xl rounded-2xl border border-white/10 bg-white/5 p-6">
@@ -34,4 +34,6 @@ export default function SignupPage() {
       </div>
     </main>
   );
-}
+};
+
+export default SignupPage;

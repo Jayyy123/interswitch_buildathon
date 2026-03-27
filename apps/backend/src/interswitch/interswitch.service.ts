@@ -123,8 +123,8 @@ export class InterswitchService {
   private readonly walletGatewayHost = 'api-gateway.interswitchng.com'; // Generic wallet transfers
 
   // ── SVA credentials (quicktellerservice — bank list with TerminalID)
-  private readonly svaClientId = 'INTERSWITCH_SVA_CLIENT_ID';
-  private readonly svaSecretKey = 'INTERSWITCH_SVA_SECRET_KEY';
+  private readonly svaClientId = 'IKIA72C65D005F93F30E573EFEAC04FA6DD9E4D344B1';
+  private readonly svaSecretKey = 'YZMqZezsltpSPNb4+49PGeP7lYkzKn1a5SaVSyzKOiI=';
   private readonly terminalId = '3PBL0001';
 
   private qtbCache: TokenCache | null = null;
@@ -220,7 +220,7 @@ export class InterswitchService {
     if (this.giCache && this.giCache.expiresAt > now) return this.giCache.token;
     // GI credentials are hardcoded per confirmed sweep result
     const token = await this.fetchOauthToken(
-      'INTERSWITCH_GI_CLIENT_ID',
+      'IKIAB23A4E2756605C1ABC33CE3C287E27267F660D61',
       'secret',
     );
     this.giCache = { token, expiresAt: now + 55 * 60 * 1000 };
@@ -230,8 +230,8 @@ export class InterswitchService {
 
   async lookupBvn(bvn: string): Promise<BvnDetails> {
     // Dedicated BVN credentials — confirmed working on api-marketplace-routing host
-    const bvnClientId = 'INTERSWITCH_BVN_CLIENT_ID';
-    const bvnSecret   = 'INTERSWITCH_BVN_SECRET_KEY';
+    const bvnClientId = 'IKIAC4AA6BD6DFCE5076F2D96649307C3409A8E914DD';
+    const bvnSecret   = '663C2D0CB9C246F5FFDF0C4355F13C4CB4E05BB9';
     const token = await this.fetchOauthToken(bvnClientId, bvnSecret, 'profile');
     try {
       const { data } = await firstValueFrom(

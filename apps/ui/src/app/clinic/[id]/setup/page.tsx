@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Building2 } from 'lucide-react';
 
+import { OnboardingSaveLink } from '@/components/auth/onboarding-save-link';
 import { SectionCard } from '@/components/section-card';
 import { buttonVariants } from '@/components/ui/button-variants';
 
@@ -55,9 +56,14 @@ export default async function ClinicSetupPage({ params }: ClinicSetupPageProps) 
         </label>
       </form>
       <div className="mt-4 flex flex-wrap gap-2">
-        <Link href={`/clinic/${id}`} className={buttonVariants({ className: 'justify-center' })}>
+        <OnboardingSaveLink
+          href={`/clinic/${id}`}
+          userId={id}
+          role="CLINIC_ADMIN"
+          className={buttonVariants({ className: 'justify-center' })}
+        >
           Save clinic
-        </Link>
+        </OnboardingSaveLink>
       </div>
     </SectionCard>
   );

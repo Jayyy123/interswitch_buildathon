@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
+import { Providers } from '@/components/providers';
 import { RouteScrollTop } from '@/components/route-scroll-top';
 
 const geistSans = Geist({
@@ -32,22 +33,26 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+const RootLayout = ({
   children,
 }: Readonly<{
   children: React.ReactNode;
-}>) {
+}>) => {
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <Suspense fallback={null}>
-          <RouteScrollTop />
-        </Suspense>
-        {children}
+        <Providers>
+          <Suspense fallback={null}>
+            <RouteScrollTop />
+          </Suspense>
+          {children}
+        </Providers>
       </body>
     </html>
   );
-}
+};
+
+export default RootLayout;

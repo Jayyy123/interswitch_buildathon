@@ -9,13 +9,13 @@ type SectionCardProps = {
   icon?: LucideIcon;
 };
 
-export function SectionCard({
+export const SectionCard = ({
   title,
   description,
   action,
   children,
   icon: Icon,
-}: SectionCardProps) {
+}: SectionCardProps) => {
   return (
     <section className="rounded-2xl border border-white/10 bg-linear-to-br from-white/8 to-white/3 p-4">
       <div className="mb-4 flex items-start justify-between gap-3">
@@ -31,4 +31,4 @@ export function SectionCard({
       {children}
     </section>
   );
-}
+};

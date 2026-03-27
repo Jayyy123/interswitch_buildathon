@@ -20,7 +20,7 @@ type CsvPreviewRow = {
 
 const TEMPLATE_CSV = 'full_name,phone,bvn\nKemi Adesina,08035551000,22334455667\n';
 
-export function EnrollMembersSection() {
+export const EnrollMembersSection = () => {
   const [mode, setMode] = useState<'manual' | 'csv'>('manual');
   const [selectedFileName, setSelectedFileName] = useState('');
   const [rows, setRows] = useState<CsvPreviewRow[]>([]);
@@ -246,4 +246,4 @@ export function EnrollMembersSection() {
       </div>
     </div>
   );
-}
+};

@@ -1,6 +1,4 @@
 import { type ReactNode } from 'react';
-import { ClipboardPlus, FileClock, House, Settings } from 'lucide-react';
-import { notFound } from 'next/navigation';
 
 import { PortalShell } from '@/components/portal-shell';
 
@@ -11,22 +9,21 @@ type ClinicScopedLayoutProps = {
 
 export default async function ClinicScopedLayout({ children, params }: ClinicScopedLayoutProps) {
   const { id } = await params;
-  if (id !== 'clinic-001') notFound();
   const base = `/clinic/${id}`;
 
   const clinicNav = [
-    { label: 'Home', href: base, icon: House },
-    { label: 'New Claim', href: `${base}/claims/new`, icon: ClipboardPlus },
-    { label: 'Claims', href: `${base}/claims`, icon: FileClock },
-    { label: 'Setup', href: `${base}/setup`, icon: Settings },
+    { label: 'Home', href: base, icon: 'home' as const },
+    { label: 'New Claim', href: `${base}/claims/new`, icon: 'new-claim' as const },
+    { label: 'Claims', href: `${base}/claims`, icon: 'claims' as const },
+    { label: 'Setup', href: `${base}/setup`, icon: 'setup' as const },
   ];
 
   return (
     <PortalShell
       role="Clinic"
-      title="HealthPoint Clinic"
+      title="Clinic portal"
       subtitle={`Clinic ID: ${id} · Fast member lookup enabled`}
-      logoutHref="/login/clinic"
+      loginPath="/login/clinic"
       navItems={clinicNav}
     >
       {children}

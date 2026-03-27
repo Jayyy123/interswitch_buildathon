@@ -1,9 +1,10 @@
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { Building2 } from 'lucide-react';
 
 import { LoginForm } from '@/components/auth/login-form';
 
-export default function AssociationLoginPage() {
+const AssociationLoginPage = () => {
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-12 text-slate-100 sm:px-6">
       <div className="mx-auto w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-6">
@@ -12,7 +13,9 @@ export default function AssociationLoginPage() {
           Association Login
         </h1>
         <p className="mt-2 text-sm text-slate-300">Sign in as an association representative.</p>
-        <LoginForm role="association" />
+        <Suspense fallback={<p className="mt-6 text-sm text-slate-400">Loading…</p>}>
+          <LoginForm role="association" />
+        </Suspense>
         <p className="mt-4 text-xs text-slate-400">
           Not association?{' '}
           <Link
@@ -25,4 +28,6 @@ export default function AssociationLoginPage() {
       </div>
     </main>
   );
-}
+};
+
+export default AssociationLoginPage;

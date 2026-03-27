@@ -1,5 +1,10 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { PlanTier } from '@prisma/client';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { PlanTier, UserRole } from '@prisma/client';
 import { InterswitchService } from '../interswitch/interswitch.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TermiiService } from '../termii/termii.service';
@@ -22,14 +27,33 @@ export class AssociationsService {
    *   2. Iyaloja's personal member wallet (Member.walletId + walletAccountNumber)
    *      stored on the Iyaloja's own Member record, if they are also enrolled as a member.
    */
-  async createAssociation(dto: CreateAssociationDto, userId: string) {
-    // Get the user's phone for wallet creation
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+  async createAssociation(
+    dto: CreateAssociationDto,
+    userId: string,
+    jwtPhone?: string,
+  ) {
+    // Ensure we have a valid owner user row before creating the association.
+    let user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user && jwtPhone) {
+      user = await this.prisma.user.findUnique({ where: { phone: jwtPhone } });
+    }
+    if (!user && jwtPhone) {
+      user = await this.prisma.user.create({
+        data: {
+          phone: jwtPhone,
+          role: UserRole.IYALOJA,
+        },
+      });
+    }
+    if (!user) {
+      throw new UnauthorizedException('Invalid session. Please login again.');
+    }
+    const ownerUserId = user.id;
 
     // Create the association first
     const association = await this.prisma.association.create({
       data: {
-        userId,
+        userId: ownerUserId,
         name: dto.name,
         cacNumber: dto.cacNumber,
         plan: (dto.plan as PlanTier) ?? PlanTier.BRONZE,
@@ -42,7 +66,10 @@ export class AssociationsService {
     // Auto-create pool wallet.
     // IMPORTANT: ISW rejects duplicate mobileNo — do NOT use the Iyaloja's real phone.
     // Derive a deterministic unique local-format phone from the association UUID digits.
-    const assocDigits = association.id.replace(/[^0-9]/g, '').padEnd(8, '0').slice(0, 8);
+    const assocDigits = association.id
+      .replace(/[^0-9]/g, '')
+      .padEnd(8, '0')
+      .slice(0, 8);
     const poolPhone = `080${assocDigits}`; // e.g. 08009876564 — unique per association
     try {
       const poolWallet = await this.interswitch.createMemberWallet(
@@ -57,9 +84,13 @@ export class AssociationsService {
           walletAccountNumber: poolWallet.settlementAccountNumber,
         },
       });
-      this.logger.log(`Pool wallet created for association ${association.id}: ${poolWallet.walletId}`);
+      this.logger.log(
+        `Pool wallet created for association ${association.id}: ${poolWallet.walletId}`,
+      );
     } catch (err) {
-      this.logger.warn(`Pool wallet creation failed for ${association.id}: ${err?.message ?? JSON.stringify(err)}`);
+      this.logger.warn(
+        `Pool wallet creation failed for ${association.id}: ${err?.message ?? JSON.stringify(err)}`,
+      );
     }
 
     // If iyaloja is also enrolled as a member in their own association, create their personal wallet
@@ -83,11 +114,15 @@ export class AssociationsService {
           });
         }
       } catch (err) {
-        this.logger.warn(`Iyaloja member wallet creation failed: ${err?.message}`);
+        this.logger.warn(
+          `Iyaloja member wallet creation failed: ${err?.message}`,
+        );
       }
     }
 
-    return this.prisma.association.findUnique({ where: { id: association.id } });
+    return this.prisma.association.findUnique({
+      where: { id: association.id },
+    });
   }
 
   async getAssociation(id: string, userId: string) {
@@ -100,8 +135,13 @@ export class AssociationsService {
       this.prisma.member.findMany({
         where: { associationId: id },
         select: {
-          id: true, name: true, phone: true, status: true, enrolledAt: true,
-          walletId: true, walletAccountNumber: true,
+          id: true,
+          name: true,
+          phone: true,
+          status: true,
+          enrolledAt: true,
+          walletId: true,
+          walletAccountNumber: true,
         },
         orderBy: { enrolledAt: 'desc' },
         take: 50,
@@ -141,7 +181,9 @@ export class AssociationsService {
       });
       return Promise.all(
         associations.map(async (a) => {
-          const memberCount = await this.prisma.member.count({ where: { associationId: a.id } });
+          const memberCount = await this.prisma.member.count({
+            where: { associationId: a.id },
+          });
           return { ...a, memberCount, userRole: 'OWNER' };
         }),
       );
@@ -149,10 +191,15 @@ export class AssociationsService {
 
     if (role === 'MEMBER') {
       // Look up the user's phone, then find any member records with that phone
-      const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { phone: true } });
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { phone: true },
+      });
       if (!user) return [];
       // Normalise: strip +234 → 0XXXXXXXXX for matching
-      const localPhone = user.phone.startsWith('+234') ? '0' + user.phone.slice(4) : user.phone;
+      const localPhone = user.phone.startsWith('+234')
+        ? '0' + user.phone.slice(4)
+        : user.phone;
       const members = await this.prisma.member.findMany({
         where: { phone: { in: [user.phone, localPhone] } },
         include: {
@@ -173,12 +220,20 @@ export class AssociationsService {
   }
 
   async verifyAndCreditPool(id: string, dto: VerifyPaymentDto, userId: string) {
-    const association = await this.prisma.association.findFirst({ where: { id, userId } });
+    const association = await this.prisma.association.findFirst({
+      where: { id, userId },
+    });
     if (!association) throw new NotFoundException('Association not found');
 
-    const result = await this.interswitch.verifyPayment(dto.transactionReference, dto.amountKobo);
+    const result = await this.interswitch.verifyPayment(
+      dto.transactionReference,
+      dto.amountKobo,
+    );
     if (!result.success) {
-      return { success: false, message: `Payment verification failed (code: ${result.responseCode})` };
+      return {
+        success: false,
+        message: `Payment verification failed (code: ${result.responseCode})`,
+      };
     }
 
     const amountNaira = dto.amountKobo / 100;
@@ -187,6 +242,10 @@ export class AssociationsService {
       data: { poolBalance: { increment: amountNaira } },
     });
 
-    return { success: true, credited: amountNaira, newBalance: association.poolBalance + amountNaira };
+    return {
+      success: true,
+      credited: amountNaira,
+      newBalance: association.poolBalance + amountNaira,
+    };
   }
 }

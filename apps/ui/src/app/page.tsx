@@ -3,7 +3,7 @@ import { ArrowRight, Building2, HeartPulse, ShieldPlus } from 'lucide-react';
 
 import { buttonVariants } from '@/components/ui/button-variants';
 
-export default function Home() {
+const Home = () => {
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-12 text-slate-100 sm:px-6">
       <div className="mx-auto w-full max-w-3xl space-y-8">
@@ -34,7 +34,7 @@ export default function Home() {
                 Sign up
               </Link>
               <Link
-                href="/association/assoc-001"
+                href="/login/association"
                 className={buttonVariants({ variant: 'outline', className: 'justify-center' })}
               >
                 <ArrowRight className="size-4" />
@@ -56,7 +56,7 @@ export default function Home() {
                 Sign up
               </Link>
               <Link
-                href="/clinic/clinic-001"
+                href="/login/clinic"
                 className={buttonVariants({ variant: 'outline', className: 'justify-center' })}
               >
                 <ArrowRight className="size-4" />
@@ -79,4 +79,6 @@ export default function Home() {
       </div>
     </main>
   );
-}
+};
+
+export default Home;

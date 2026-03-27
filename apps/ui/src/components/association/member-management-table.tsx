@@ -14,7 +14,7 @@ type MemberManagementTableProps = {
   associationId: string;
 };
 
-export function MemberManagementTable({ associationId }: MemberManagementTableProps) {
+export const MemberManagementTable = ({ associationId }: MemberManagementTableProps) => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | MemberStatus>('all');
   const [paymentFilter, setPaymentFilter] = useState<'all' | PaymentMethod>('all');
@@ -180,4 +180,4 @@ export function MemberManagementTable({ associationId }: MemberManagementTablePr
       </div>
     </div>
   );
-}
+};

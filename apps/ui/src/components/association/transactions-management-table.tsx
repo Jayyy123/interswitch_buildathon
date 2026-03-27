@@ -69,7 +69,7 @@ const TRANSACTIONS: TxRow[] = [
 
 const PAGE_SIZE = 4;
 
-export function TransactionsManagementTable() {
+export const TransactionsManagementTable = () => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | TxStatus>('all');
   const [sourceFilter, setSourceFilter] = useState<'all' | TxSource>('all');
@@ -218,4 +218,4 @@ export function TransactionsManagementTable() {
       </div>
     </div>
   );
-}
+};

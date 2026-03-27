@@ -1,0 +1,15 @@
+FROM node:20.19-alpine AS builder
+RUN corepack enable && corepack prepare pnpm@latest --activate
+WORKDIR /app
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
+COPY apps/ui/package.json ./apps/ui/
+RUN pnpm install --frozen-lockfile
+
+COPY apps/ui ./apps/ui
+
+WORKDIR /app/apps/ui
+
+EXPOSE 3000
+
+CMD ["pnpm", "run", "dev"]
