@@ -2,11 +2,13 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 
-import { MEMBERS, type MemberStatus, type PaymentMethod } from '@/data/members';
 import { StatusBadge } from '@/components/status-badge';
 import { buttonVariants } from '@/components/ui/button-variants';
+import { ApiError, getAssociationMembers, retryAssociationMemberWallet } from '@/lib/api';
+import type { AssociationMemberStatus } from '@/lib/auth-types';
 
 const PAGE_SIZE = 4;
 
@@ -15,28 +17,33 @@ type MemberManagementTableProps = {
 };
 
 export const MemberManagementTable = ({ associationId }: MemberManagementTableProps) => {
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | MemberStatus>('all');
-  const [paymentFilter, setPaymentFilter] = useState<'all' | PaymentMethod>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | AssociationMemberStatus>('all');
   const [page, setPage] = useState(1);
 
-  const filteredMembers = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return MEMBERS.filter((member) => {
-      const searchMatch =
-        q.length === 0 ||
-        member.fullName.toLowerCase().includes(q) ||
-        member.id.toLowerCase().includes(q) ||
-        member.phone.toLowerCase().includes(q);
-      const statusMatch = statusFilter === 'all' || member.status === statusFilter;
-      const paymentMatch = paymentFilter === 'all' || member.paymentMethod === paymentFilter;
-      return searchMatch && statusMatch && paymentMatch;
-    });
-  }, [search, statusFilter, paymentFilter]);
+  const membersQuery = useQuery({
+    queryKey: ['association-members', associationId, page, statusFilter, search],
+    queryFn: () =>
+      getAssociationMembers(associationId, {
+        page,
+        limit: PAGE_SIZE,
+        status: statusFilter === 'all' ? undefined : statusFilter,
+        search: search.trim() || undefined,
+      }),
+  });
 
-  const totalPages = Math.max(1, Math.ceil(filteredMembers.length / PAGE_SIZE));
+  const total = membersQuery.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const pageMembers = filteredMembers.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const pageMembers = membersQuery.data?.data ?? [];
+
+  const retryWalletMutation = useMutation({
+    mutationFn: (memberId: string) => retryAssociationMemberWallet(associationId, memberId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['association-members', associationId] });
+    },
+  });
 
   const onPageChange = (nextPage: number) => setPage(Math.min(totalPages, Math.max(1, nextPage)));
 
@@ -59,31 +66,26 @@ export const MemberManagementTable = ({ associationId }: MemberManagementTablePr
         <select
           value={statusFilter}
           onChange={(event) => {
-            setStatusFilter(event.target.value as 'all' | MemberStatus);
+            setStatusFilter(event.target.value as 'all' | AssociationMemberStatus);
             setPage(1);
           }}
           className="w-full rounded-lg border border-white/15 bg-slate-900 px-3 py-2 text-sm capitalize"
         >
           <option value="all">All status</option>
-          <option value="active">Active</option>
-          <option value="paused">Paused</option>
-          <option value="removed">Removed</option>
-        </select>
-
-        <select
-          value={paymentFilter}
-          onChange={(event) => {
-            setPaymentFilter(event.target.value as 'all' | PaymentMethod);
-            setPage(1);
-          }}
-          className="w-full rounded-lg border border-white/15 bg-slate-900 px-3 py-2 text-sm capitalize"
-        >
-          <option value="all">All payment methods</option>
-          <option value="wallet">Wallet</option>
-          <option value="cash">Cash</option>
-          <option value="card">Card</option>
+          <option value="ACTIVE">Active</option>
+          <option value="PAUSED">Paused</option>
+          <option value="FLAGGED">Flagged</option>
+          <option value="INCOMPLETE">Incomplete</option>
         </select>
       </div>
+
+      {membersQuery.isError ? (
+        <p className="text-sm text-rose-300">
+          {membersQuery.error instanceof ApiError
+            ? membersQuery.error.message
+            : 'Could not load members.'}
+        </p>
+      ) : null}
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-left text-sm">
@@ -92,13 +94,19 @@ export const MemberManagementTable = ({ associationId }: MemberManagementTablePr
               <th className="py-2">Member</th>
               <th className="py-2">Phone</th>
               <th className="py-2">Status</th>
-              <th className="py-2">Payment</th>
+              <th className="py-2">Wallet</th>
               <th className="py-2">Contrib. streak</th>
               <th className="py-2 text-right">Action</th>
             </tr>
           </thead>
           <tbody>
-            {pageMembers.length === 0 ? (
+            {membersQuery.isPending ? (
+              <tr className="border-t border-white/10">
+                <td colSpan={6} className="py-6 text-center text-slate-400">
+                  Loading members...
+                </td>
+              </tr>
+            ) : pageMembers.length === 0 ? (
               <tr className="border-t border-white/10">
                 <td colSpan={6} className="py-6 text-center text-slate-400">
                   No members match your search/filters.
@@ -108,7 +116,7 @@ export const MemberManagementTable = ({ associationId }: MemberManagementTablePr
               pageMembers.map((member) => (
                 <tr key={member.id} className="border-t border-white/10">
                   <td className="py-3">
-                    <p className="font-medium text-white">{member.fullName}</p>
+                    <p className="font-medium text-white">{member.name}</p>
                     <p className="text-xs text-slate-400">{member.id}</p>
                   </td>
                   <td>{member.phone}</td>
@@ -116,23 +124,46 @@ export const MemberManagementTable = ({ associationId }: MemberManagementTablePr
                     <StatusBadge
                       label={member.status}
                       tone={
-                        member.status === 'active'
+                        member.status === 'ACTIVE'
                           ? 'green'
-                          : member.status === 'paused'
+                          : member.status === 'PAUSED'
                             ? 'yellow'
                             : 'red'
                       }
                     />
                   </td>
-                  <td className="capitalize">{member.paymentMethod}</td>
-                  <td>{member.contributionStreak}</td>
+                  <td>
+                    <StatusBadge
+                      label={member.walletStatus}
+                      tone={
+                        member.walletStatus === 'SUCCESS'
+                          ? 'green'
+                          : member.walletStatus === 'PENDING'
+                            ? 'yellow'
+                            : 'red'
+                      }
+                    />
+                  </td>
+                  <td>{Math.max(0, 3 - member.consecutiveMissedPayments)}</td>
                   <td className="text-right">
-                    <Link
-                      href={`/association/${associationId}/members/${member.id}`}
-                      className={buttonVariants({ variant: 'outline', size: 'sm' })}
-                    >
-                      View details
-                    </Link>
+                    <div className="flex justify-end gap-2">
+                      <Link
+                        href={`/association/${associationId}/members/${member.id}`}
+                        className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                      >
+                        View details
+                      </Link>
+                      {member.walletStatus === 'FAILED' ? (
+                        <button
+                          type="button"
+                          className={buttonVariants({ size: 'sm' })}
+                          disabled={retryWalletMutation.isPending}
+                          onClick={() => retryWalletMutation.mutate(member.id)}
+                        >
+                          Retry wallet
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -144,7 +175,7 @@ export const MemberManagementTable = ({ associationId }: MemberManagementTablePr
       <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-xs text-slate-300">
         <p>
           Showing {pageMembers.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1}-
-          {(safePage - 1) * PAGE_SIZE + pageMembers.length} of {filteredMembers.length}
+          {(safePage - 1) * PAGE_SIZE + pageMembers.length} of {total}
         </p>
         <div className="flex items-center gap-2">
           <button

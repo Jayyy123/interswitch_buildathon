@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle2,
   Download,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react';
 
 import { buttonVariants } from '@/components/ui/button-variants';
+import { ApiError, enrollAssociationMembers } from '@/lib/api';
 
 type CsvPreviewRow = {
   full_name: string;
@@ -20,12 +22,22 @@ type CsvPreviewRow = {
 
 const TEMPLATE_CSV = 'full_name,phone,bvn\nKemi Adesina,08035551000,22334455667\n';
 
-export const EnrollMembersSection = () => {
+type EnrollMembersSectionProps = {
+  associationId: string;
+};
+
+const parseCsvLine = (line: string) => line.split(',').map((item) => item.trim());
+
+export const EnrollMembersSection = ({ associationId }: EnrollMembersSectionProps) => {
+  const queryClient = useQueryClient();
   const [mode, setMode] = useState<'manual' | 'csv'>('manual');
   const [selectedFileName, setSelectedFileName] = useState('');
   const [rows, setRows] = useState<CsvPreviewRow[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadState, setUploadState] = useState<'idle' | 'done'>('idle');
+  const [uploadState, setUploadState] = useState<'idle' | 'done' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [bvn, setBvn] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const validRows = useMemo(
@@ -33,6 +45,32 @@ export const EnrollMembersSection = () => {
     [rows],
   );
   const invalidRows = rows.length - validRows.length;
+  const mappedRows = validRows.map((row) => ({
+    fullName: row.full_name.trim(),
+    phoneNumber: row.phone.trim(),
+    bvn: row.bvn.trim(),
+  }));
+
+  const enrollMutation = useMutation({
+    mutationFn: (members: Array<{ fullName: string; phoneNumber: string; bvn: string }>) =>
+      enrollAssociationMembers(associationId, { members }),
+    onSuccess: () => {
+      setUploadState('done');
+      setErrorMessage('');
+      setRows([]);
+      setSelectedFileName('');
+      queryClient.invalidateQueries({ queryKey: ['association-members', associationId] });
+      queryClient.invalidateQueries({ queryKey: ['association-dashboard', associationId] });
+      queryClient.invalidateQueries({ queryKey: ['association-wallet', associationId] });
+      setFullName('');
+      setPhoneNumber('');
+      setBvn('');
+    },
+    onError: (error) => {
+      setUploadState('error');
+      setErrorMessage(error instanceof ApiError ? error.message : 'Enrollment failed.');
+    },
+  });
 
   const onPickCsv = () => fileInputRef.current?.click();
 
@@ -45,12 +83,18 @@ export const EnrollMembersSection = () => {
     reader.onload = () => {
       const text = String(reader.result ?? '');
       const [headerLine, ...dataLines] = text.split(/\r?\n/).filter(Boolean);
-      const headers = headerLine.split(',').map((item) => item.trim().toLowerCase());
+      const headers = parseCsvLine(headerLine).map((item) => item.toLowerCase());
       const idxName = headers.indexOf('full_name');
       const idxPhone = headers.indexOf('phone');
       const idxBvn = headers.indexOf('bvn');
+      if (idxName < 0 || idxPhone < 0 || idxBvn < 0) {
+        setRows([]);
+        setUploadState('error');
+        setErrorMessage('CSV must contain full_name, phone, bvn columns.');
+        return;
+      }
       const parsed = dataLines.map((line) => {
-        const cols = line.split(',').map((item) => item.trim());
+        const cols = parseCsvLine(line);
         return {
           full_name: cols[idxName] ?? '',
           phone: cols[idxPhone] ?? '',
@@ -58,16 +102,34 @@ export const EnrollMembersSection = () => {
         };
       });
       setRows(parsed);
+      setErrorMessage('');
     };
     reader.readAsText(file);
   };
 
-  const onDummyUpload = async () => {
-    setIsUploading(true);
+  const onEnrollManual = () => {
+    const cleanName = fullName.trim();
+    const cleanPhone = phoneNumber.trim();
+    const cleanBvn = bvn.trim();
+    if (!cleanName || !cleanPhone || !cleanBvn) {
+      setUploadState('error');
+      setErrorMessage('Full name, phone number, and BVN are required.');
+      return;
+    }
     setUploadState('idle');
-    await new Promise((resolve) => setTimeout(resolve, 900));
-    setIsUploading(false);
-    setUploadState('done');
+    setErrorMessage('');
+    enrollMutation.mutate([{ fullName: cleanName, phoneNumber: cleanPhone, bvn: cleanBvn }]);
+  };
+
+  const onEnrollCsv = () => {
+    if (mappedRows.length === 0) {
+      setUploadState('error');
+      setErrorMessage('No valid rows to enroll.');
+      return;
+    }
+    setUploadState('idle');
+    setErrorMessage('');
+    enrollMutation.mutate(mappedRows);
   };
 
   return (
@@ -110,6 +172,8 @@ export const EnrollMembersSection = () => {
                 <input
                   placeholder="e.g. Kemi Adesina"
                   className="w-full rounded-lg border border-white/15 bg-slate-900 px-3 py-2 text-sm"
+                  value={fullName}
+                  onChange={(event) => setFullName(event.target.value)}
                 />
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -118,6 +182,8 @@ export const EnrollMembersSection = () => {
                   <input
                     placeholder="e.g. 0803 555 1000"
                     className="w-full rounded-lg border border-white/15 bg-slate-900 px-3 py-2 text-sm"
+                    value={phoneNumber}
+                    onChange={(event) => setPhoneNumber(event.target.value)}
                   />
                 </label>
                 <label className="text-xs">
@@ -125,12 +191,23 @@ export const EnrollMembersSection = () => {
                   <input
                     placeholder="11-digit BVN"
                     className="w-full rounded-lg border border-white/15 bg-slate-900 px-3 py-2 text-sm"
+                    value={bvn}
+                    onChange={(event) => setBvn(event.target.value)}
                   />
                 </label>
               </div>
-              <button type="button" className={buttonVariants({ className: 'justify-center' })}>
-                <CheckCircle2 className="size-4" />
-                Save member
+              <button
+                type="button"
+                disabled={enrollMutation.isPending}
+                onClick={onEnrollManual}
+                className={buttonVariants({ className: 'justify-center' })}
+              >
+                {enrollMutation.isPending ? (
+                  <LoaderCircle className="size-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="size-4" />
+                )}
+                {enrollMutation.isPending ? 'Saving...' : 'Save member'}
               </button>
             </div>
           </div>
@@ -225,21 +302,31 @@ export const EnrollMembersSection = () => {
 
                 <button
                   type="button"
-                  onClick={onDummyUpload}
-                  disabled={isUploading}
+                  onClick={onEnrollCsv}
+                  disabled={enrollMutation.isPending}
                   className={buttonVariants({ className: 'mt-2 w-full justify-center' })}
                 >
-                  {isUploading ? (
+                  {enrollMutation.isPending ? (
                     <LoaderCircle className="size-4 animate-spin" />
                   ) : (
                     <Upload className="size-4" />
                   )}
-                  {isUploading ? 'Uploading...' : 'Upload members'}
+                  {enrollMutation.isPending ? 'Enrolling...' : 'Enroll members'}
                 </button>
-                {uploadState === 'done' ? (
-                  <p className="text-[11px] text-emerald-300">Upload complete.</p>
+                {uploadState === 'done' && !enrollMutation.isPending ? (
+                  <p className="text-[11px] text-emerald-300">
+                    Enrollment submitted. Members are being provisioned in the background.
+                  </p>
                 ) : null}
               </div>
+            ) : null}
+            {uploadState === 'error' && errorMessage ? (
+              <p className="mt-3 text-xs text-rose-300">{errorMessage}</p>
+            ) : null}
+            {uploadState === 'done' && mode === 'manual' ? (
+              <p className="mt-3 text-xs text-emerald-300">
+                Member enrollment submitted. Wallet provisioning continues in background.
+              </p>
             ) : null}
           </div>
         </div>

@@ -1,6 +1,10 @@
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
-import { ContributionSource, ContributionStatus, MemberStatus } from '@prisma/client';
+import {
+  ContributionSource,
+  ContributionStatus,
+  MemberStatus,
+} from '@prisma/client';
 import { Job } from 'bullmq';
 import { InterswitchService } from '../interswitch/interswitch.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -46,11 +50,11 @@ export class WeeklyDebitProcessor extends WorkerHost {
 
     this.logger.log(`Found ${members.length} active members to debit`);
     let success = 0;
-    let failed  = 0;
+    let failed = 0;
 
     for (const member of members) {
       const weeklyAmount = PLAN_WEEKLY_AMOUNTS[member.association.plan] ?? 400;
-      const reference    = `OMOH-WEEKLY-${member.id}-${monday.toISOString().slice(0, 10)}`;
+      const reference = `OMOH-WEEKLY-${member.id}-${monday.toISOString().slice(0, 10)}`;
 
       // Idempotency — skip if already processed this week
       const existing = await this.prisma.contribution.findFirst({
@@ -58,7 +62,11 @@ export class WeeklyDebitProcessor extends WorkerHost {
       });
       if (existing) continue;
 
-      let debitResult: { success: boolean; responseCode: string; responseMessage: string };
+      let debitResult: {
+        success: boolean;
+        responseCode: string;
+        responseMessage: string;
+      };
       try {
         debitResult = await this.interswitch.debitMemberWallet(
           member.walletId!,
@@ -79,22 +87,22 @@ export class WeeklyDebitProcessor extends WorkerHost {
         await this.prisma.$transaction([
           this.prisma.contribution.create({
             data: {
-              memberId:      member.id,
+              memberId: member.id,
               associationId: member.associationId,
-              amount:        weeklyAmount,
-              source:        ContributionSource.DIRECT_DEBIT,
-              status:        ContributionStatus.SUCCESS,
+              amount: weeklyAmount,
+              source: ContributionSource.DIRECT_DEBIT,
+              status: ContributionStatus.SUCCESS,
               interswitchRef: reference,
-              week:          monday,
+              week: monday,
             },
           }),
           this.prisma.association.update({
             where: { id: member.associationId },
-            data:  { poolBalance: { increment: weeklyAmount } },
+            data: { poolBalance: { increment: weeklyAmount } },
           }),
           this.prisma.member.update({
             where: { id: member.id },
-            data:  { consecutiveMissedPayments: 0 },
+            data: { consecutiveMissedPayments: 0 },
           }),
         ]);
 
@@ -107,19 +115,19 @@ export class WeeklyDebitProcessor extends WorkerHost {
         success++;
       } else {
         // ── FAILED ──────────────────────────────────────────────────────────
-        const newMissed  = (member.consecutiveMissedPayments ?? 0) + 1;
+        const newMissed = (member.consecutiveMissedPayments ?? 0) + 1;
         const shouldPause = newMissed >= 3;
 
         await this.prisma.$transaction([
           this.prisma.contribution.create({
             data: {
-              memberId:      member.id,
+              memberId: member.id,
               associationId: member.associationId,
-              amount:        weeklyAmount,
-              source:        ContributionSource.DIRECT_DEBIT,
-              status:        ContributionStatus.FAILED,
+              amount: weeklyAmount,
+              source: ContributionSource.DIRECT_DEBIT,
+              status: ContributionStatus.FAILED,
               interswitchRef: reference,
-              week:          monday,
+              week: monday,
             },
           }),
           this.prisma.member.update({
@@ -138,33 +146,43 @@ export class WeeklyDebitProcessor extends WorkerHost {
         );
 
         if (shouldPause) {
-          await this.termii.sendCoveragePausedSms(member.phone, member.name ?? 'Member');
+          await this.termii.sendCoveragePausedSms(
+            member.phone,
+            member.name ?? 'Member',
+          );
         }
         failed++;
       }
     }
 
-    this.logger.log(`Weekly debit complete: ${success} succeeded, ${failed} failed`);
+    this.logger.log(
+      `Weekly debit complete: ${success} succeeded, ${failed} failed`,
+    );
     await job.updateProgress(100);
   }
 
   @OnWorkerEvent('failed')
   onFailed(job: Job, err: Error) {
-    this.logger.error(`Job ${job.id} failed after ${job.attemptsMade} attempts`, err.message);
+    this.logger.error(
+      `Job ${job.id} failed after ${job.attemptsMade} attempts`,
+      err.message,
+    );
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   private getWeekNumber(date: Date): number {
-    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const d = new Date(
+      Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()),
+    );
     d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
     const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+    return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   }
 
   private getLastMonday(): Date {
     const now = new Date();
-    const dow  = now.getUTCDay();
+    const dow = now.getUTCDay();
     const diff = dow === 0 ? -6 : 1 - dow;
     const monday = new Date(now);
     monday.setUTCDate(now.getUTCDate() + diff);

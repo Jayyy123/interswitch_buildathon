@@ -225,7 +225,7 @@ export default function NewClinicClaimPage() {
               <span className="text-emerald-300">
                 {formatNgn(Math.min(parseFloat(billAmount) || 0, member.coverageRemaining))}
               </span>{' '}
-              (member's remaining coverage).
+              (member&apos;s remaining coverage).
             </p>
           )}
 

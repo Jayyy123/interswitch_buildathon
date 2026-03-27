@@ -7,7 +7,12 @@ import { AssociationsController } from './associations.controller';
 import { AssociationsService } from './associations.service';
 
 @Module({
-  imports: [InterswitchModule, TermiiModule, MembersModule, WalletProvisionModule],
+  imports: [
+    InterswitchModule,
+    TermiiModule,
+    MembersModule,
+    WalletProvisionModule,
+  ],
   controllers: [AssociationsController],
   providers: [AssociationsService],
   exports: [AssociationsService],

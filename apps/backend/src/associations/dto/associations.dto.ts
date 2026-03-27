@@ -35,6 +35,30 @@ export class CreateAssociationDto {
   coverageLimit?: number;
 }
 
+export class UpdateAssociationDto {
+  @IsString()
+  @IsOptional()
+  @IsNotEmpty()
+  name?: string;
+
+  @IsString()
+  @IsOptional()
+  cacNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  @IsIn(['BRONZE', 'SILVER', 'GOLD'])
+  plan?: 'BRONZE' | 'SILVER' | 'GOLD';
+
+  @IsNumber()
+  @IsOptional()
+  monthlyDues?: number;
+
+  @IsNumber()
+  @IsOptional()
+  coverageLimit?: number;
+}
+
 // ─── Payment verification ─────────────────────────────────────────────────────
 
 export class VerifyPaymentDto {

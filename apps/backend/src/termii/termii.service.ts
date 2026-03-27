@@ -35,9 +35,12 @@ export class TermiiService {
         }),
       );
       this.logger.log(`SMS sent to ${intlPhone.slice(0, 8)}***`);
-    } catch (err) {
+    } catch (err: any) {
       // Log but never throw — SMS failure must not break the primary flow
-      this.logger.error(`Termii send failed to ${intlPhone}`, err?.response?.data ?? err.message);
+      this.logger.error(
+        `Termii send failed to ${intlPhone}`,
+        err?.response?.data ?? err?.message,
+      );
     }
   }
 
@@ -52,7 +55,12 @@ export class TermiiService {
 
   // ─── Onboarding ───────────────────────────────────────────────────────────
 
-  async sendOnboarding(phone: string, name: string, plan: string, clinicUrl?: string): Promise<void> {
+  async sendOnboarding(
+    phone: string,
+    name: string,
+    plan: string,
+    clinicUrl?: string,
+  ): Promise<void> {
     const clinic = clinicUrl ? ` View your coverage: ${clinicUrl}` : '';
     await this.send(
       phone,
@@ -62,7 +70,11 @@ export class TermiiService {
 
   // ─── Wallet Setup ─────────────────────────────────────────────────────────
 
-  async sendWalletSetup(phone: string, name: string, amount: number): Promise<void> {
+  async sendWalletSetup(
+    phone: string,
+    name: string,
+    amount: number,
+  ): Promise<void> {
     await this.send(
       phone,
       `Hi ${name}, fund your OmoHealth wallet with at least NGN ${amount.toLocaleString()} to activate your health coverage. Contact your Iyaloja for payment details.`,
@@ -71,7 +83,12 @@ export class TermiiService {
 
   // ─── Weekly Contribution Confirmed ────────────────────────────────────────
 
-  async sendContributionConfirmed(phone: string, name: string, amount: number, poolBalance: number): Promise<void> {
+  async sendContributionConfirmed(
+    phone: string,
+    name: string,
+    amount: number,
+    poolBalance: number,
+  ): Promise<void> {
     await this.send(
       phone,
       `OmoHealth: NGN ${amount.toLocaleString()} contribution received for ${name}. Pool balance: NGN ${poolBalance.toLocaleString()}. Thank you!`,
@@ -80,7 +97,11 @@ export class TermiiService {
 
   // ─── Payment Failed ───────────────────────────────────────────────────────
 
-  async sendPaymentFailed(phone: string, name: string, amount: number): Promise<void> {
+  async sendPaymentFailed(
+    phone: string,
+    name: string,
+    amount: number,
+  ): Promise<void> {
     await this.send(
       phone,
       `OmoHealth: NGN ${amount.toLocaleString()} contribution for ${name} failed — insufficient wallet balance. Please top up within 3 days to keep your coverage active.`,
@@ -98,7 +119,12 @@ export class TermiiService {
 
   // ─── Claim Confirmed ──────────────────────────────────────────────────────
 
-  async sendClaimConfirmed(phone: string, name: string, amount: number, hospital: string): Promise<void> {
+  async sendClaimConfirmed(
+    phone: string,
+    name: string,
+    amount: number,
+    hospital: string,
+  ): Promise<void> {
     await this.send(
       phone,
       `OmoHealth: NGN ${amount.toLocaleString()} approved and sent to ${hospital} for ${name}. Stay strong!`,
@@ -130,7 +156,11 @@ export class TermiiService {
     nextDebit: string,
   ): Promise<void> {
     const statusLabel =
-      status === 'COVERED' ? '✅ COVERED' : status === 'PAUSED' ? '⏸ PAUSED' : '🚫 FLAGGED';
+      status === 'COVERED'
+        ? '✅ COVERED'
+        : status === 'PAUSED'
+          ? '⏸ PAUSED'
+          : '🚫 FLAGGED';
     const remaining = coverageLimit - coverageUsed;
     await this.send(
       phone,
@@ -151,19 +181,46 @@ export class TermiiService {
   //     use the old *Sms names; these shim to the new methods.
   //     TODO: update callers and remove in next cleanup sprint.
 
-  async sendEnrollmentSms(phone: string, assocName: string, plan: string, _weeklyAmt: number, _startDate: string, _clinic?: string): Promise<void> {
+  async sendEnrollmentSms(
+    phone: string,
+    assocName: string,
+    plan: string,
+    _weeklyAmt: number,
+    _startDate: string,
+    _clinic?: string,
+  ): Promise<void> {
     await this.sendOnboarding(phone, assocName, plan);
   }
 
-  async sendWalletSetupSms(phone: string, name: string, _acct: string, _bank: string, weeklyAmt: number): Promise<void> {
+  async sendWalletSetupSms(
+    phone: string,
+    name: string,
+    _acct: string,
+    _bank: string,
+    weeklyAmt: number,
+  ): Promise<void> {
     await this.sendWalletSetup(phone, name, weeklyAmt);
   }
 
-  async sendContributionConfirmedSms(phone: string, weekNumber: number, amount: number, poolBalance: number): Promise<void> {
-    await this.sendContributionConfirmed(phone, `Week ${weekNumber}`, amount, poolBalance);
+  async sendContributionConfirmedSms(
+    phone: string,
+    weekNumber: number,
+    amount: number,
+    poolBalance: number,
+  ): Promise<void> {
+    await this.sendContributionConfirmed(
+      phone,
+      `Week ${weekNumber}`,
+      amount,
+      poolBalance,
+    );
   }
 
-  async sendDebitFailedSms(phone: string, amount: number, _accountNumber: string): Promise<void> {
+  async sendDebitFailedSms(
+    phone: string,
+    amount: number,
+    _accountNumber: string,
+  ): Promise<void> {
     await this.sendPaymentFailed(phone, 'Member', amount);
   }
 
@@ -171,7 +228,13 @@ export class TermiiService {
     await this.sendCoveragePaused(phone, name);
   }
 
-  async sendClaimPaidSms(phone: string, amount: number, hospitalName: string, _date: string, _remaining: number): Promise<void> {
+  async sendClaimPaidSms(
+    phone: string,
+    amount: number,
+    hospitalName: string,
+    _date: string,
+    _remaining: number,
+  ): Promise<void> {
     await this.sendClaimConfirmed(phone, 'Member', amount, hospitalName);
   }
 }

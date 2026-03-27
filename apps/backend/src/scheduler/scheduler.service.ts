@@ -12,7 +12,9 @@ export class SchedulerService implements OnModuleInit {
     private readonly weeklyDebitQueue: Queue,
   ) {
     // Attach error listener immediately so BullMQ errors don't become uncaught exceptions
-    weeklyDebitQueue.on('error', (err) => this.logger.warn('Weekly debit queue error:', err.message));
+    weeklyDebitQueue.on('error', (err) =>
+      this.logger.warn('Weekly debit queue error:', err.message),
+    );
   }
 
   /**
@@ -28,7 +30,7 @@ export class SchedulerService implements OnModuleInit {
         {}, // no payload needed — processor reads from DB
         {
           repeat: {
-            pattern: '0 7 * * 1',  // Monday 08:00 WAT (07:00 UTC)
+            pattern: '0 7 * * 1', // Monday 08:00 WAT (07:00 UTC)
             tz: 'Africa/Lagos',
           },
           jobId: 'weekly-debit-repeatable', // stable ID prevents duplicate schedules
@@ -36,7 +38,9 @@ export class SchedulerService implements OnModuleInit {
           removeOnFail: 200,
         },
       );
-      this.logger.log('Weekly debit repeatable job registered (Monday 08:00 WAT)');
+      this.logger.log(
+        'Weekly debit repeatable job registered (Monday 08:00 WAT)',
+      );
     } catch (err) {
       this.logger.warn(
         'Redis unavailable — weekly debit job NOT scheduled. Set REDIS_URL in Railway and redeploy.',
@@ -61,7 +65,10 @@ export class SchedulerService implements OnModuleInit {
         },
       );
     } catch (err) {
-      this.logger.warn('Trigger debit failed (Redis unavailable):', err?.message);
+      this.logger.warn(
+        'Trigger debit failed (Redis unavailable):',
+        err?.message,
+      );
     }
     return { message: 'Weekly debit job queued — check logs for progress' };
   }

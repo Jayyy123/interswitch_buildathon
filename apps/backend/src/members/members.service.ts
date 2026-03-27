@@ -11,18 +11,21 @@ import { Queue } from 'bullmq';
 import { InterswitchService } from '../interswitch/interswitch.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TermiiService } from '../termii/termii.service';
-import { PROVISION_MEMBER_WALLET, WALLET_PROVISION_QUEUE } from '../wallet-provision/wallet-provision.queue';
+import {
+  PROVISION_MEMBER_WALLET,
+  WALLET_PROVISION_QUEUE,
+} from '../wallet-provision/wallet-provision.queue';
 
 const PLAN_WEEKLY_AMOUNTS: Record<string, number> = {
   BRONZE: 200,
   SILVER: 400,
-  GOLD:   700,
+  GOLD: 700,
 };
 
 const PLAN_COVERAGE_LIMITS: Record<string, number> = {
-  BRONZE:  75_000,
+  BRONZE: 75_000,
   SILVER: 150_000,
-  GOLD:   300_000,
+  GOLD: 300_000,
 };
 
 export interface EnrollMemberItem {
@@ -42,7 +45,9 @@ export class MembersService {
     @InjectQueue(WALLET_PROVISION_QUEUE)
     private readonly walletQueue: Queue,
   ) {
-    walletQueue.on('error', (err) => this.logger.warn('Wallet queue error:', err.message));
+    walletQueue.on('error', (err) =>
+      this.logger.warn('Wallet queue error:', err.message),
+    );
   }
 
   // ─── Single + Bulk Enrollment ─────────────────────────────────────────────
@@ -58,14 +63,23 @@ export class MembersService {
    *  4. Return 200 with results array
    *  5. Background: provision wallet for each new member, send wallet SMS when done
    */
-  async enrollMembers(associationId: string, members: EnrollMemberItem[], iyalojaUserId: string) {
+  async enrollMembers(
+    associationId: string,
+    members: EnrollMemberItem[],
+    iyalojaUserId: string,
+  ) {
     const association = await this.prisma.association.findFirst({
       where: { id: associationId, userId: iyalojaUserId },
     });
-    if (!association) throw new NotFoundException('Association not found or not yours');
+    if (!association)
+      throw new NotFoundException('Association not found or not yours');
 
     const weeklyAmount = PLAN_WEEKLY_AMOUNTS[association.plan] ?? 400;
-    const startDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    const startDate = new Date().toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
 
     const results: Array<{
       index: number;
@@ -89,7 +103,13 @@ export class MembersService {
           where: { associationId_bvn: { associationId, bvn: row.bvn } },
         });
         if (existing) {
-          results.push({ index: i, fullName: row.fullName, phoneNumber: phone, status: 'skipped', reason: 'Already enrolled' });
+          results.push({
+            index: i,
+            fullName: row.fullName,
+            phoneNumber: phone,
+            status: 'skipped',
+            reason: 'Already enrolled',
+          });
           continue;
         }
 
@@ -97,10 +117,14 @@ export class MembersService {
         let resolvedName = row.fullName;
         try {
           const bvnDetails = await this.interswitch.lookupBvn(row.bvn);
-          const fromBvn = [bvnDetails.firstName, bvnDetails.lastName].filter(Boolean).join(' ');
+          const fromBvn = [bvnDetails.firstName, bvnDetails.lastName]
+            .filter(Boolean)
+            .join(' ');
           if (fromBvn) resolvedName = fromBvn;
         } catch {
-          this.logger.warn(`BVN lookup failed for ${row.bvn} — using provided name`);
+          this.logger.warn(
+            `BVN lookup failed for ${row.bvn} — using provided name`,
+          );
         }
 
         // Create member: status=PAUSED, walletStatus=PENDING
@@ -110,7 +134,7 @@ export class MembersService {
             bvn: row.bvn,
             phone,
             name: resolvedName,
-            status: MemberStatus.PAUSED,  // active once wallet funded
+            status: MemberStatus.PAUSED, // active once wallet funded
             walletStatus: 'PENDING',
             waitingPeriodStart: new Date(),
             enrolledAt: new Date(),
@@ -127,16 +151,30 @@ export class MembersService {
           startDate,
         );
 
-        results.push({ index: i, fullName: resolvedName, phoneNumber: phone, status: 'enrolled', memberId: member.id });
+        results.push({
+          index: i,
+          fullName: resolvedName,
+          phoneNumber: phone,
+          status: 'enrolled',
+          memberId: member.id,
+        });
       } catch (err: any) {
-        this.logger.error(`Enrollment failed for row ${i} (${row.phoneNumber}): ${err?.message}`);
-        results.push({ index: i, fullName: row.fullName, phoneNumber: row.phoneNumber, status: 'failed', reason: err?.message ?? 'Unknown error' });
+        this.logger.error(
+          `Enrollment failed for row ${i} (${row.phoneNumber}): ${err?.message}`,
+        );
+        results.push({
+          index: i,
+          fullName: row.fullName,
+          phoneNumber: row.phoneNumber,
+          status: 'failed',
+          reason: err?.message ?? 'Unknown error',
+        });
       }
     }
 
     const enrolled = results.filter((r) => r.status === 'enrolled').length;
-    const skipped  = results.filter((r) => r.status === 'skipped').length;
-    const failed   = results.filter((r) => r.status === 'failed').length;
+    const skipped = results.filter((r) => r.status === 'skipped').length;
+    const failed = results.filter((r) => r.status === 'failed').length;
 
     // Enqueue one BullMQ job per new member — retries on failure, visible in queue
     for (const memberId of newMemberIds) {
@@ -144,10 +182,16 @@ export class MembersService {
         await this.walletQueue.add(
           PROVISION_MEMBER_WALLET,
           { memberId },
-          { jobId: `member-wallet-${memberId}`, removeOnComplete: true, removeOnFail: 100 },
+          {
+            jobId: `member-wallet-${memberId}`,
+            removeOnComplete: true,
+            removeOnFail: 100,
+          },
         );
       } catch (err) {
-        this.logger.warn(`Wallet job not queued for ${memberId} (Redis unavailable): ${err?.message}`);
+        this.logger.warn(
+          `Wallet job not queued for ${memberId} (Redis unavailable): ${err?.message}`,
+        );
       }
     }
 
@@ -157,7 +201,10 @@ export class MembersService {
       skipped,
       failed,
       results,
-      message: enrolled > 0 ? `${enrolled} member(s) enrolled. Wallet setup running in background.` : 'No new members enrolled.',
+      message:
+        enrolled > 0
+          ? `${enrolled} member(s) enrolled. Wallet setup running in background.`
+          : 'No new members enrolled.',
     };
   }
 
@@ -170,7 +217,12 @@ export class MembersService {
     weeklyAmount: number,
   ): Promise<void> {
     for (const memberId of memberIds) {
-      await this._provisionWalletForMember(memberId, associationName, plan, weeklyAmount);
+      await this._provisionWalletForMember(
+        memberId,
+        associationName,
+        plan,
+        weeklyAmount,
+      );
     }
   }
 
@@ -180,7 +232,9 @@ export class MembersService {
     plan: string,
     weeklyAmount: number,
   ): Promise<void> {
-    const member = await this.prisma.member.findUnique({ where: { id: memberId } });
+    const member = await this.prisma.member.findUnique({
+      where: { id: memberId },
+    });
     if (!member) return;
 
     await this.prisma.member.update({
@@ -213,11 +267,17 @@ export class MembersService {
       // Create/update Wallet record for balance tracking
       await this.prisma.wallet.upsert({
         where: { memberId },
-        create: { memberId, interswitchRef: wallet.settlementAccountNumber, balance: 0 },
+        create: {
+          memberId,
+          interswitchRef: wallet.settlementAccountNumber,
+          balance: 0,
+        },
         update: { interswitchRef: wallet.settlementAccountNumber },
       });
 
-      this.logger.log(`Wallet provisioned for member ${memberId}: ${wallet.walletId} | VA: ${wallet.settlementAccountNumber}`);
+      this.logger.log(
+        `Wallet provisioned for member ${memberId}: ${wallet.walletId} | VA: ${wallet.settlementAccountNumber}`,
+      );
 
       // Wallet setup SMS — send exact account number and bank name
       await this.termii.sendWalletSetupSms(
@@ -228,7 +288,9 @@ export class MembersService {
         weeklyAmount,
       );
     } catch (err) {
-      this.logger.error(`Wallet provisioning failed for member ${memberId}: ${err?.message}`);
+      this.logger.error(
+        `Wallet provisioning failed for member ${memberId}: ${err?.message}`,
+      );
       await this.prisma.member.update({
         where: { id: memberId },
         data: { walletStatus: 'FAILED' },
@@ -238,12 +300,17 @@ export class MembersService {
 
   // ─── Retry wallet for failed members ─────────────────────────────────────
 
-  async retryWallet(associationId: string, memberId: string, iyalojaUserId: string) {
+  async retryWallet(
+    associationId: string,
+    memberId: string,
+    iyalojaUserId: string,
+  ) {
     // Verify association ownership
     const association = await this.prisma.association.findFirst({
       where: { id: associationId, userId: iyalojaUserId },
     });
-    if (!association) throw new NotFoundException('Association not found or not yours');
+    if (!association)
+      throw new NotFoundException('Association not found or not yours');
 
     const member = await this.prisma.member.findFirst({
       where: { id: memberId, associationId },
@@ -266,13 +333,21 @@ export class MembersService {
       await this.walletQueue.add(
         PROVISION_MEMBER_WALLET,
         { memberId },
-        { jobId: `member-wallet-retry-${memberId}-${Date.now()}`, removeOnComplete: true, removeOnFail: 100 },
+        {
+          jobId: `member-wallet-retry-${memberId}-${Date.now()}`,
+          removeOnComplete: true,
+          removeOnFail: 100,
+        },
       );
     } catch (err) {
-      this.logger.warn(`Retry wallet job not queued (Redis unavailable): ${err?.message}`);
+      this.logger.warn(
+        `Retry wallet job not queued (Redis unavailable): ${err?.message}`,
+      );
     }
 
-    return { message: 'Wallet provisioning queued. SMS will be sent when ready.' };
+    return {
+      message: 'Wallet provisioning queued. SMS will be sent when ready.',
+    };
   }
 
   // ─── Coverage check (public — used by members and clinic portal) ──────────
@@ -281,13 +356,24 @@ export class MembersService {
     const member = await this.prisma.member.findUnique({
       where: { id: memberId },
       include: {
-        association: { select: { name: true, plan: true, poolBalance: true, monthlyDues: true, coverageLimit: true } },
+        association: {
+          select: {
+            name: true,
+            plan: true,
+            poolBalance: true,
+            monthlyDues: true,
+            coverageLimit: true,
+          },
+        },
         wallet: { select: { interswitchRef: true, balance: true } },
       },
     });
     if (!member) throw new NotFoundException('Member not found');
 
-    const limit = member.association.coverageLimit ?? PLAN_COVERAGE_LIMITS[member.association.plan] ?? 75_000;
+    const limit =
+      member.association.coverageLimit ??
+      PLAN_COVERAGE_LIMITS[member.association.plan] ??
+      75_000;
 
     return {
       memberId: member.id,
@@ -299,7 +385,12 @@ export class MembersService {
       association: member.association.name,
       walletId: member.walletId ?? null,
       walletAccountNumber: member.walletAccountNumber ?? null,
-      bankAccount: member.wallet ? { accountNumber: member.wallet.interswitchRef, balance: member.wallet.balance } : null,
+      bankAccount: member.wallet
+        ? {
+            accountNumber: member.wallet.interswitchRef,
+            balance: member.wallet.balance,
+          }
+        : null,
       coverageLimit: limit,
       coverageUsed: member.coverageUsedThisYear,
       coverageRemaining: Math.max(0, limit - member.coverageUsedThisYear),

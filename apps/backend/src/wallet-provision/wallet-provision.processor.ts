@@ -14,7 +14,7 @@ import {
 const PLAN_WEEKLY_AMOUNTS: Record<string, number> = {
   BRONZE: 200,
   SILVER: 400,
-  GOLD:   700,
+  GOLD: 700,
 };
 
 @Processor(WALLET_PROVISION_QUEUE)
@@ -48,14 +48,20 @@ export class WalletProvisionProcessor extends WorkerHost {
     email: string;
   }): Promise<void> {
     const { associationId, name, phone, email } = data;
-    this.logger.log(`Provisioning pool wallet for association ${associationId}`);
+    this.logger.log(
+      `Provisioning pool wallet for association ${associationId}`,
+    );
 
-    const wallet = await this.interswitch.createMemberWallet(name, phone, email);
+    const wallet = await this.interswitch.createMemberWallet(
+      name,
+      phone,
+      email,
+    );
 
     await this.prisma.association.update({
       where: { id: associationId },
-      data:  {
-        walletId:            wallet.walletId,
+      data: {
+        walletId: wallet.walletId,
         walletAccountNumber: wallet.settlementAccountNumber,
       },
     });
@@ -67,10 +73,12 @@ export class WalletProvisionProcessor extends WorkerHost {
 
   // ─── Member wallet ─────────────────────────────────────────────────────────
 
-  private async provisionMemberWallet(data: { memberId: string }): Promise<void> {
+  private async provisionMemberWallet(data: {
+    memberId: string;
+  }): Promise<void> {
     const { memberId } = data;
     const member = await this.prisma.member.findUnique({
-      where:   { id: memberId },
+      where: { id: memberId },
       include: { association: { select: { plan: true, name: true } } },
     });
     if (!member) {
@@ -86,7 +94,7 @@ export class WalletProvisionProcessor extends WorkerHost {
 
     await this.prisma.member.update({
       where: { id: memberId },
-      data:  { walletStatus: 'PROVISIONING' },
+      data: { walletStatus: 'PROVISIONING' },
     });
 
     const wallet = await this.interswitch.createMemberWallet(
@@ -99,20 +107,25 @@ export class WalletProvisionProcessor extends WorkerHost {
     await this.prisma.member.update({
       where: { id: memberId },
       data: {
-        walletId:            wallet.walletId,
+        walletId: wallet.walletId,
         walletAccountNumber: wallet.settlementAccountNumber,
-        walletStatus:        'ACTIVE',
-        status:              MemberStatus.ACTIVE,
+        walletStatus: 'ACTIVE',
+        status: MemberStatus.ACTIVE,
       },
     });
 
     await this.prisma.wallet.upsert({
-      where:  { memberId },
-      create: { memberId, interswitchRef: wallet.settlementAccountNumber, balance: 0 },
+      where: { memberId },
+      create: {
+        memberId,
+        interswitchRef: wallet.settlementAccountNumber,
+        balance: 0,
+      },
       update: { interswitchRef: wallet.settlementAccountNumber },
     });
 
-    const weeklyAmount = PLAN_WEEKLY_AMOUNTS[member.association?.plan ?? 'SILVER'] ?? 400;
+    const weeklyAmount =
+      PLAN_WEEKLY_AMOUNTS[member.association?.plan ?? 'SILVER'] ?? 400;
     await this.termii.sendWalletSetupSms(
       member.phone,
       member.name ?? 'Member',

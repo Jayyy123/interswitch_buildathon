@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 const ASSOCIATION_ROLE = 'IYALOJA';
 const CLINIC_ROLE = 'CLINIC_ADMIN';
 
-export const middleware = (request: NextRequest) => {
+export const proxy = (request: NextRequest) => {
   const { pathname } = request.nextUrl;
   const session = request.cookies.get('omo_session')?.value;
   const role = request.cookies.get('omo_role')?.value;

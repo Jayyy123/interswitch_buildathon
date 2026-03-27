@@ -1,97 +1,59 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 
 import { StatusBadge } from '@/components/status-badge';
 import { buttonVariants } from '@/components/ui/button-variants';
-
-type TxStatus = 'success' | 'failed' | 'cash' | 'pending';
-type TxSource = 'auto_debit' | 'cash' | 'manual';
-
-type TxRow = {
-  ref: string;
-  source: TxSource;
-  member: string;
-  weekOf: string;
-  amount: string;
-  status: TxStatus;
-  processedAt: string;
-};
-
-const TRANSACTIONS: TxRow[] = [
-  {
-    ref: 'TX-82112',
-    source: 'auto_debit',
-    member: 'Kemi Adesina',
-    weekOf: '2026-W10',
-    amount: 'N 6,000',
-    status: 'success',
-    processedAt: '2026-03-20 09:13',
-  },
-  {
-    ref: 'TX-82110',
-    source: 'cash',
-    member: 'Tunde Lawal',
-    weekOf: '2026-W10',
-    amount: 'N 6,000',
-    status: 'cash',
-    processedAt: '2026-03-20 11:42',
-  },
-  {
-    ref: 'TX-82105',
-    source: 'auto_debit',
-    member: 'Amaka Obi',
-    weekOf: '2026-W10',
-    amount: 'N 6,000',
-    status: 'failed',
-    processedAt: '2026-03-20 08:57',
-  },
-  {
-    ref: 'TX-82098',
-    source: 'manual',
-    member: 'Binta Yusuf',
-    weekOf: '2026-W09',
-    amount: 'N 6,000',
-    status: 'pending',
-    processedAt: '2026-03-18 17:26',
-  },
-  {
-    ref: 'TX-82095',
-    source: 'auto_debit',
-    member: 'Segun Musa',
-    weekOf: '2026-W09',
-    amount: 'N 6,000',
-    status: 'success',
-    processedAt: '2026-03-17 10:06',
-  },
-];
+import { ApiError, getAssociationTransactions } from '@/lib/api';
+import { formatNgn } from '@/lib/claim-ui';
 
 const PAGE_SIZE = 4;
 
-export const TransactionsManagementTable = () => {
+type TxStatus = 'PENDING' | 'SUCCESS' | 'FAILED';
+type TxSource = 'DIRECT_DEBIT' | 'CASH';
+
+type TransactionsManagementTableProps = {
+  associationId: string;
+};
+
+export const TransactionsManagementTable = ({
+  associationId,
+}: TransactionsManagementTableProps) => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | TxStatus>('all');
   const [sourceFilter, setSourceFilter] = useState<'all' | TxSource>('all');
   const [page, setPage] = useState(1);
 
+  const transactionsQuery = useQuery({
+    queryKey: ['association-transactions', associationId, page, sourceFilter],
+    queryFn: () =>
+      getAssociationTransactions(associationId, {
+        page,
+        limit: PAGE_SIZE,
+        source: sourceFilter === 'all' ? undefined : sourceFilter,
+      }),
+  });
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    return TRANSACTIONS.filter((row) => {
+    const rows = transactionsQuery.data?.data ?? [];
+    return rows.filter((row) => {
       const searchMatch =
         q.length === 0 ||
-        row.ref.toLowerCase().includes(q) ||
-        row.member.toLowerCase().includes(q) ||
-        row.weekOf.toLowerCase().includes(q);
+        row.id.toLowerCase().includes(q) ||
+        row.member.name.toLowerCase().includes(q) ||
+        new Date(row.week).toLocaleDateString().toLowerCase().includes(q);
       const statusMatch = statusFilter === 'all' || row.status === statusFilter;
       const sourceMatch = sourceFilter === 'all' || row.source === sourceFilter;
       return searchMatch && statusMatch && sourceMatch;
     });
-  }, [search, statusFilter, sourceFilter]);
+  }, [search, statusFilter, sourceFilter, transactionsQuery.data]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil((transactionsQuery.data?.total ?? 0) / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const paged = filtered;
 
   return (
     <div className="space-y-4">
@@ -117,10 +79,9 @@ export const TransactionsManagementTable = () => {
           className="w-full rounded-lg border border-white/15 bg-slate-900 px-3 py-2 text-sm capitalize"
         >
           <option value="all">All status</option>
-          <option value="success">Success</option>
-          <option value="failed">Failed</option>
-          <option value="cash">Cash</option>
-          <option value="pending">Pending</option>
+          <option value="SUCCESS">Success</option>
+          <option value="FAILED">Failed</option>
+          <option value="PENDING">Pending</option>
         </select>
         <select
           value={sourceFilter}
@@ -131,11 +92,17 @@ export const TransactionsManagementTable = () => {
           className="w-full rounded-lg border border-white/15 bg-slate-900 px-3 py-2 text-sm capitalize"
         >
           <option value="all">All sources</option>
-          <option value="auto_debit">Auto debit</option>
-          <option value="cash">Cash</option>
-          <option value="manual">Manual</option>
+          <option value="DIRECT_DEBIT">Auto debit</option>
+          <option value="CASH">Cash</option>
         </select>
       </div>
+      {transactionsQuery.isError ? (
+        <p className="text-sm text-rose-300">
+          {transactionsQuery.error instanceof ApiError
+            ? transactionsQuery.error.message
+            : 'Could not load transactions.'}
+        </p>
+      ) : null}
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[860px] text-left text-sm">
@@ -151,7 +118,13 @@ export const TransactionsManagementTable = () => {
             </tr>
           </thead>
           <tbody>
-            {paged.length === 0 ? (
+            {transactionsQuery.isPending ? (
+              <tr className="border-t border-white/10">
+                <td colSpan={7} className="py-6 text-center text-slate-400">
+                  Loading transactions...
+                </td>
+              </tr>
+            ) : paged.length === 0 ? (
               <tr className="border-t border-white/10">
                 <td colSpan={7} className="py-6 text-center text-slate-400">
                   No transactions match your search/filters.
@@ -159,24 +132,24 @@ export const TransactionsManagementTable = () => {
               </tr>
             ) : (
               paged.map((row) => (
-                <tr key={row.ref} className="border-t border-white/10">
-                  <td className="py-3 font-medium text-white">{row.ref}</td>
-                  <td className="capitalize">{row.source.replace('_', ' ')}</td>
-                  <td>{row.member}</td>
-                  <td>{row.weekOf}</td>
-                  <td>{row.amount}</td>
-                  <td>{row.processedAt}</td>
+                <tr key={row.id} className="border-t border-white/10">
+                  <td className="py-3 font-medium text-white">{row.id.slice(0, 8)}...</td>
+                  <td className="capitalize">
+                    {row.source === 'DIRECT_DEBIT' ? 'Auto debit' : 'Cash'}
+                  </td>
+                  <td>{row.member.name}</td>
+                  <td>{new Date(row.week).toLocaleDateString()}</td>
+                  <td>{formatNgn(row.amount)}</td>
+                  <td>{new Date(row.createdAt).toLocaleString()}</td>
                   <td>
                     <StatusBadge
-                      label={row.status}
+                      label={row.status.toLowerCase()}
                       tone={
-                        row.status === 'success'
+                        row.status === 'SUCCESS'
                           ? 'green'
-                          : row.status === 'cash'
-                            ? 'blue'
-                            : row.status === 'pending'
-                              ? 'yellow'
-                              : 'red'
+                          : row.status === 'PENDING'
+                            ? 'yellow'
+                            : 'red'
                       }
                     />
                   </td>
@@ -190,7 +163,7 @@ export const TransactionsManagementTable = () => {
       <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-xs text-slate-300">
         <p>
           Showing {paged.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1}-
-          {(safePage - 1) * PAGE_SIZE + paged.length} of {filtered.length}
+          {(safePage - 1) * PAGE_SIZE + paged.length} of {transactionsQuery.data?.total ?? 0}
         </p>
         <div className="flex items-center gap-2">
           <button
