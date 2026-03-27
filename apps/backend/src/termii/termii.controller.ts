@@ -20,10 +20,11 @@ export class TermiiController {
 
   @Post('inbound')
   async receiveInbound(@Body() body: Record<string, any>): Promise<{ received: boolean }> {
-    const from: string = body.from ?? body.sender ?? body.msisdn ?? '';
-    const text: string = body.text ?? body.message ?? body.sms ?? '';
+    // Termii payload: { sender, receiver, message, message_id, received_at, type, ... }
+    const from: string = body.sender ?? body.from ?? body.msisdn ?? '';
+    const text: string = body.message ?? body.text ?? body.sms ?? '';
 
-    this.logger.log(`Inbound SMS webhook: from=${from} text="${text}"`);
+    this.logger.log(`Inbound SMS webhook: from=${from} msg="${text}" id=${body.message_id ?? ''}`);
 
     if (from && text) {
       // Fire-and-forget — respond 200 immediately, process async
