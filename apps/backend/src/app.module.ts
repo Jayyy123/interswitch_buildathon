@@ -1,7 +1,6 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AssociationsModule } from './associations/associations.module';
@@ -14,21 +13,22 @@ import { PaymentsModule } from './payments/payments.module';
 import { PayoutsModule } from './payouts/payouts.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
+import { WalletProvisionModule } from './wallet-provision/wallet-provision.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
 
-    // Cron / @Interval scheduler (weekly contribution debits)
-    ScheduleModule.forRoot(),
-
-    // BullMQ — Redis-backed job queues for heavy async work
+    // BullMQ — connects to Railway Redis via REDIS_URL env var
     BullModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         connection: {
-          url: config.get<string>('REDIS_URL', 'redis://localhost:6379'),
+          url:                  config.get<string>('REDIS_URL', 'redis://localhost:6379'),
+          maxRetriesPerRequest: null,   // required for BullMQ 5.x workers
+          enableReadyCheck:     false,  // required for BullMQ 5.x — prevents "Connection is closed" crash
+          retryStrategy:        (times: number) => Math.min(times * 500, 5000),
         },
         defaultJobOptions: {
           attempts: 5,
@@ -49,6 +49,7 @@ import { SchedulerModule } from './scheduler/scheduler.module';
     ClinicModule,
     ClaimsModule,
     PayoutsModule,
+    WalletProvisionModule,
   ],
   controllers: [AppController],
   providers: [AppService],

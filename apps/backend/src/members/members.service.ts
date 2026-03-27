@@ -5,10 +5,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
 import { MemberStatus } from '@prisma/client';
+import { Queue } from 'bullmq';
 import { InterswitchService } from '../interswitch/interswitch.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TermiiService } from '../termii/termii.service';
+import { PROVISION_MEMBER_WALLET, WALLET_PROVISION_QUEUE } from '../wallet-provision/wallet-provision.queue';
 
 const PLAN_WEEKLY_AMOUNTS: Record<string, number> = {
   BRONZE: 200,
@@ -36,7 +39,11 @@ export class MembersService {
     private readonly prisma: PrismaService,
     private readonly interswitch: InterswitchService,
     private readonly termii: TermiiService,
-  ) {}
+    @InjectQueue(WALLET_PROVISION_QUEUE)
+    private readonly walletQueue: Queue,
+  ) {
+    walletQueue.on('error', (err) => this.logger.warn('Wallet queue error:', err.message));
+  }
 
   // ─── Single + Bulk Enrollment ─────────────────────────────────────────────
 
@@ -131,12 +138,17 @@ export class MembersService {
     const skipped  = results.filter((r) => r.status === 'skipped').length;
     const failed   = results.filter((r) => r.status === 'failed').length;
 
-    // Fire background wallet provisioning — don't await, return 200 immediately
-    if (newMemberIds.length > 0) {
-      void Promise.resolve().then(() =>
-        this._provisionWalletsInBackground(newMemberIds, association.name, association.plan, weeklyAmount)
-          .catch((err) => this.logger.error('Background wallet provisioning crashed', err?.message)),
-      );
+    // Enqueue one BullMQ job per new member — retries on failure, visible in queue
+    for (const memberId of newMemberIds) {
+      try {
+        await this.walletQueue.add(
+          PROVISION_MEMBER_WALLET,
+          { memberId },
+          { jobId: `member-wallet-${memberId}`, removeOnComplete: true, removeOnFail: 100 },
+        );
+      } catch (err) {
+        this.logger.warn(`Wallet job not queued for ${memberId} (Redis unavailable): ${err?.message}`);
+      }
     }
 
     return {
@@ -249,10 +261,16 @@ export class MembersService {
       data: { walletStatus: 'PENDING' },
     });
 
-    void Promise.resolve().then(() =>
-      this._provisionWalletForMember(memberId, association.name, association.plan, weeklyAmount)
-        .catch((err) => this.logger.error(`Retry wallet failed for ${memberId}`, err?.message)),
-    );
+    // Enqueue a BullMQ retry job — processor handles ISW call with built-in retries
+    try {
+      await this.walletQueue.add(
+        PROVISION_MEMBER_WALLET,
+        { memberId },
+        { jobId: `member-wallet-retry-${memberId}-${Date.now()}`, removeOnComplete: true, removeOnFail: 100 },
+      );
+    } catch (err) {
+      this.logger.warn(`Retry wallet job not queued (Redis unavailable): ${err?.message}`);
+    }
 
     return { message: 'Wallet provisioning queued. SMS will be sent when ready.' };
   }

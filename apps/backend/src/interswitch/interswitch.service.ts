@@ -149,6 +149,11 @@ export class InterswitchService {
     this.walletSecretKey = this.configService.get('INTERSWITCH_WALLET_SECRET_KEY', this.qtbSecretKey);
     this.walletId        = this.configService.get('INTERSWITCH_WALLET_ID', '2700014982');
     this.walletPin       = this.configService.get('INTERSWITCH_WALLET_PIN', '1234');
+    // CF Worker proxy overrides ISW direct URL (avoids Railway IP restrictions)
+    this.merchantWalletBase = this.configService.get(
+      'ISW_MERCHANT_WALLET_BASE',
+      'https://merchant-wallet.k8.isw.la/merchant-wallet',
+    );
   }
 
   // ─── Token helpers ────────────────────────────────────────────────────────────
@@ -333,8 +338,9 @@ export class InterswitchService {
   // The virtualAccount (Wema Bank account) is included in the creation response.
   // No separate createVirtualAccount() call needed any more.
   // Phone MUST be local format: 08XXXXXXXXX (not +234...).
+  // ISW_MERCHANT_WALLET_BASE env var overrides this for CF Worker proxy routing.
 
-  private readonly merchantWalletBase = 'https://merchant-wallet.k8.isw.la/merchant-wallet';
+  private readonly merchantWalletBase: string;  // set in constructor
   private readonly merchantCode_GI    = 'MX6072';
 
   async createMemberWallet(
