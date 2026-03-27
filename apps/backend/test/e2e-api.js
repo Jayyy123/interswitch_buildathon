@@ -277,12 +277,12 @@ async function main() {
   // ── Step 15: Submit Claim ────────────────────────────────────────────────
   if (assocId) {
     const claim = await request('POST', '/payments/claims', {
-      associationId:          assocId,
-      hospitalName:           'UCH Ibadan',
-      hospitalAccountNumber:  '0123456789',
-      hospitalBankCode:       '058',
-      amountNGN:              20000,
-      description:            'E2E test claim — malaria treatment',
+      associationId,
+      hospitalName:     'UCH Ibadan',
+      hospitalAccount:  '0123456789',   // correct DTO field name
+      hospitalBankCode: '058',
+      billAmount:       20000,           // correct DTO field name
+      description:      'E2E test claim — malaria treatment',
     }, token);
     if (claim.body?.id || claim.status === 201) {
       pass('POST /payments/claims', { id: claim.body.id, status: claim.body.status });
