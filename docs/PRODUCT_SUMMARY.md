@@ -8,17 +8,16 @@
 
 OmoHealth is a **community health pooling platform** for Nigeria's 93 million informal workers — market traders, artisans, domestic workers — who have zero access to HMOs or employer-sponsored insurance.
 
-It works through **Iyaloja-led associations** (market unions, cooperatives). The Iyaloja (market union leader) manages the pool on behalf of her members. No app download required for members. No bank account required. Just a phone number and a BVN.
+It works through **Iyaloja (association admin)-led associations** (market unions, cooperatives). The Iyaloja manages the pool on behalf of her members. No app download required for members. No bank account required. Just a phone number and a BVN.
 
 ---
 
 ## How It Works
 
-1. **Iyaloja onboards** her association (CAC number, selects a plan tier)
-2. **Enrolls members** by uploading a CSV of BVNs → Interswitch BVN API looks up their phone numbers → wallets are created → members get an SMS
-3. **Weekly contributions** are auto-debited from member wallets every Monday via Interswitch Direct Debit
-4. **Claims**: Iyaloja selects a member, enters hospital + bill amount, uploads the bill photo → pool pays the hospital directly via Interswitch Payment Gateway
-5. **Emergency levy**: if a claim exceeds the pool balance, Iyaloja triggers an SMS levy — members reply YES to contribute extra immediately
+1. **Iyaloja onboards** her association (association name, optional CAC number, selects a plan tier)
+2. **Enrolls members** by uploading a CSV of BVNs → Interswitch BVN API looks up their phone numbers → wallets are created asynchronously (via BullMQ) → members get an SMS
+3. **Weekly contributions** are auto-debited from member wallets every Monday via Interswitch Direct Debit (BullMQ scheduler)
+4. **Claims**: Iyaloja selects a member, enters hospital + bill amount → Association pool pays the hospital directly via Interswitch Payment Gateway. Clinic admins can also submit claims on behalf of patients through the **Clinic Portal**
 
 ---
 
@@ -39,21 +38,22 @@ It works through **Iyaloja-led associations** (market unions, cooperatives). The
 
 | Actor | Role |
 |---|---|
-| **Iyaloja** | Admin — manages pool, members, claims, levies via web dashboard |
-| **Member** | Passive — receives SMS notifications, can check status via a phone-accessible read-only view |
-| **Clinic staff** | Looks up patient coverage by phone number via a Clinic Portal |
+| **Iyaloja (association admin)** | Admin — manages pool, members, claims, levies via web dashboard |
+| **Member** | Passive — receives SMS notifications; can opt out via SMS `STOP` |
+| **Clinic Admin** | Looks up patient coverage by phone number and submits claims via the Clinic Portal |
 
 ---
 
-## Core Tech Stack (from product doc)
+## Core Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Backend | NestJS + PostgreSQL (Supabase) + Prisma |
-| Frontend | React (Vite) |
+| Backend | NestJS + PostgreSQL + Prisma 7 |
+| Async Jobs | BullMQ + Redis (wallet provisioning & weekly scheduler) |
+| Frontend | Next.js 16 PWA (Tailwind CSS v4, shadcn/ui) |
 | Payments | **Interswitch** — Direct Debit, Payment Gateway, BVN API, Safe Token OTP |
-| SMS | Termii |
-| Deploy | Railway (backend) + Vercel (frontend) |
+| SMS | Termii (OTP delivery + rich notification templates + inbound keyword handling) |
+| Deploy | Railway (backend + DB + Redis) + Vercel (frontend) + Cloudflare Worker (ISW proxy) |
 
 ---
 
@@ -61,45 +61,48 @@ It works through **Iyaloja-led associations** (market unions, cooperatives). The
 
 | API | Purpose |
 |---|---|
-| **BVN Lookup** | Resolve member phone number from BVN on enrollment |
-| **Wallet / Direct Debit** | Create member wallets; auto-debit weekly contributions |
+| **BVN Lookup** | Resolve member name and phone number from BVN on enrollment |
+| **Wallet / Direct Debit** | Create member and association wallets; auto-debit weekly contributions |
 | **Payment Gateway** | Pay hospital directly when a claim is approved |
-| **Safe Token OTP** | Confirm large claims (>₦50,000) |
+| **Safe Token OTP** | Confirm large claims (> ₦50,000) before payment |
 | **ILS Bridge Loan** | If pool balance is insufficient, ILS advances the shortfall — repaid from the following Monday's contributions |
 
 ---
 
-## Key Features (Backend Priority)
+## Database Schema (Summary)
 
-- [ ] Association + Iyaloja auth (OTP login via phone)
-- [ ] Member enrollment via CSV → BVN lookup → wallet creation
-- [ ] Weekly contribution cron job (Monday auto-debit)
-- [ ] Claim submission + approval + hospital payment flow
-- [ ] Emergency levy (SMS blast → YES reply → instant debit)
-- [ ] Pool balance tracking & coverage limit enforcement
-- [ ] Manual cash contribution recording
-- [ ] Clinic Portal — phone lookup for coverage check
+The schema has **9 models** across 3 user roles:
 
----
-
-## Edge Cases to Handle
-
-- Interswitch API timeout → retry 3× with exponential backoff, log as `pending`, never double-debit
-- Duplicate BVNs in CSV → deduplicate before processing
-- Claim for paused member → 403: "Coverage paused. Reinstate first."
-- Pool insufficient for claim → ILS bridge loan covers shortfall
-- Member opts out (SMS STOP) → paused, no debits; SMS START reactivates (waiting period does NOT restart)
-- Hospital payment fails → claim stays `approved`, not `paid`; Iyaloja can update account + retry within 24h
-- Member in multiple associations → separate wallet + coverage per association (stacks independently)
-
----
-
-## Demo Flow (Hackathon Pitch — 5 min)
-
-| Time | Action |
+| Model | Description |
 |---|---|
-| 0:00–0:30 | Opening pitch on the problem |
-| 0:30–1:30 | Iyaloja uploads 5 BVNs → wallets created → onboarding SMS arrives |
-| 1:30–2:30 | Dashboard: ₦1.24M pool, 8 covered members |
-| 2:30–4:00 | Claim flow: ₦85,000 bill → Safe Token OTP → Approve → SMS to member |
-| 4:00–5:00 | Emergency levy: ₦300K surgery, pool covers ₦150K, levy ₦500/member, YES replies flow in |
+| `User` | Central auth table — phone + OTP login; role = `IYALOJA` / `MEMBER` / `CLINIC_ADMIN` |
+| `OtpCode` | Short-lived bcrypt-hashed 6-digit codes; 5-minute expiry |
+| `Association` | Health pool owned by one Iyaloja; stores `poolBalance`, `plan`, `walletId`, `walletAccountNumber` |
+| `Member` | A person enrolled in an association; linked to BVN, wallet, and coverage tracking |
+| `Wallet` | Interswitch wallet for a member — used for auto-debit |
+| `Contribution` | One row per weekly debit or manual cash entry — tracks money **in** to the pool |
+| `Claim` | Hospital payout request — tracks money **out** of the pool |
+| `Clinic` | A clinic institution with bank payout details |
+| `ClinicAdmin` | A clinic staff user who can look up coverage and submit claims |
+
+See [`docs/DATABASE_SCHEMA.md`](./DATABASE_SCHEMA.md) for the full field-level documentation.
+
+---
+
+## Key Features — Implementation Status
+
+- [x] Association + Iyaloja auth (OTP login via phone, Termii SMS)
+- [x] Member enrollment via CSV → BVN lookup → async wallet creation (BullMQ)
+- [x] 3-tier Interswitch wallet architecture (pool wallet, Iyaloja wallet, member wallet)
+- [x] Weekly contribution cron job (Monday auto-debit via BullMQ scheduler)
+- [x] Claim submission + Iyaloja approval + hospital payment (Interswitch Payment Gateway)
+- [x] Pool balance tracking & annual coverage limit enforcement per member
+- [x] Manual cash contribution recording
+- [x] Clinic Portal — phone lookup for coverage check + claim submission
+- [x] Safe Token OTP confirmation for large claims (> ₦50,000)
+- [x] SMS inbound keyword handling (STOP, STATUS, HELP, BALANCE via Termii webhook)
+- [x] Rich SMS notification templates (enrollment, contribution success/failure, claim paid)
+- [x] Cloudflare Worker proxy for Interswitch traffic (Railway → UK IP bypass)
+- [x] Full Next.js 16 PWA with Iyaloja Portal, Member view, and Clinic Portal
+- [x] Production Docker Compose stack + multi-stage Dockerfiles
+- [x] E2E test suite for enrollment → wallet → contribution → claim flow
