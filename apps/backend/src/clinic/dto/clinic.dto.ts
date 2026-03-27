@@ -8,14 +8,7 @@ export class RegisterClinicDto {
   @IsString()
   @IsOptional()
   address?: string;
-
-  @IsString()
-  @IsOptional()
-  bankAccount?: string;
-
-  @IsString()
-  @IsOptional()
-  bankCode?: string;
+  // No bank fields — wallet is auto-provisioned via Interswitch on registration
 }
 
 export class LookupMemberDto {
@@ -51,12 +44,5 @@ export class SaveClinicSetupDto {
   @IsString()
   @IsOptional()
   address?: string;
-
-  @IsString()
-  @IsOptional()
-  bankAccount?: string;
-
-  @IsString()
-  @IsOptional()
-  bankCode?: string;
+  // No bank fields — wallet is auto-provisioned; cannot be changed manually
 }

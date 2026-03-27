@@ -31,6 +31,12 @@ export class ClinicController {
     return this.clinicService.getSetup(req.user.userId);
   }
 
+  /** GET /clinic/wallet — wallet details + live balance */
+  @Get('wallet')
+  getWallet(@Request() req: { user: { userId: string } }) {
+    return this.clinicService.getWalletInfo(req.user.userId);
+  }
+
   /** PATCH /clinic/setup */
   @Patch('setup')
   saveSetup(

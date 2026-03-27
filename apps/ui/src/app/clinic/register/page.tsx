@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
-import { Building2 } from 'lucide-react';
+import { Building2, Wallet } from 'lucide-react';
 
 import { buttonVariants } from '@/components/ui/button-variants';
 import { ApiError, registerClinic } from '@/lib/api';
@@ -12,8 +12,6 @@ export default function ClinicRegisterPage() {
   const router = useRouter();
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
-  const [bankAccount, setBankAccount] = useState('');
-  const [bankCode, setBankCode] = useState('');
   const [error, setError] = useState('');
 
   const mutation = useMutation({
@@ -32,8 +30,6 @@ export default function ClinicRegisterPage() {
     mutation.mutate({
       name: name.trim(),
       address: address.trim() || undefined,
-      bankAccount: bankAccount.trim() || undefined,
-      bankCode: bankCode.trim() || undefined,
     });
   };
 
@@ -76,32 +72,14 @@ export default function ClinicRegisterPage() {
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block text-sm">
-              <span className="mb-1 block text-slate-300">Bank account</span>
-              <input
-                id="bank-account-input"
-                className="w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-500"
-                placeholder="0099553344"
-                value={bankAccount}
-                onChange={(e) => setBankAccount(e.target.value)}
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="mb-1 block text-slate-300">Bank code</span>
-              <input
-                id="bank-code-input"
-                className="w-full rounded-lg border border-white/15 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-500"
-                placeholder="011"
-                value={bankCode}
-                onChange={(e) => setBankCode(e.target.value)}
-              />
-            </label>
+          {/* Wallet notice */}
+          <div className="flex items-start gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
+            <Wallet className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+            <p className="text-xs text-emerald-300">
+              A payout wallet will be automatically provisioned for your clinic. Claim payments go
+              directly to this wallet.
+            </p>
           </div>
-
-          <p className="text-xs text-slate-500">
-            Bank details are needed for automatic claim payouts. You can add them later in Settings.
-          </p>
 
           {error && <p className="text-sm text-rose-300">{error}</p>}
 
@@ -111,7 +89,7 @@ export default function ClinicRegisterPage() {
             disabled={mutation.isPending || !name.trim()}
             className={buttonVariants({ className: 'w-full justify-center' })}
           >
-            {mutation.isPending ? 'Setting up…' : 'Create clinic & continue'}
+            {mutation.isPending ? 'Setting up wallet…' : 'Create clinic & continue'}
           </button>
         </form>
       </div>

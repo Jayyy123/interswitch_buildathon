@@ -48,9 +48,18 @@ export type ClinicSetup = {
   id: string;
   name: string;
   address: string | null;
-  bankAccount: string | null;
-  bankCode: string | null;
+  walletId: string | null;
+  walletAccountNumber: string | null;
+  walletBankName: string | null;
 } | null;
+
+export type ClinicWallet = {
+  walletId: string | null;
+  accountNumber: string | null;
+  bankName: string | null;
+  balanceNaira: number | null;
+  status: 'ACTIVE' | 'PROVISIONING' | 'NOT_PROVISIONED';
+};
 
 // ─── Claims (clinic-side) ─────────────────────────────────────────────────────
 

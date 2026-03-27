@@ -21,6 +21,7 @@ import type {
   ClinicClaimResult,
   ClinicSetup,
   ClinicStats,
+  ClinicWallet,
   MemberLookupResult,
   RegisterClinicResponse,
   VerifyOtpResponse,
@@ -33,6 +34,7 @@ export type {
   ClinicClaimResult,
   ClinicSetup,
   ClinicStats,
+  ClinicWallet,
   MemberLookupResult,
   RegisterClinicResponse,
   VerifyOtpResponse,
@@ -228,8 +230,6 @@ export const verifyAssociationPayment = async (
 export const registerClinic = async (payload: {
   name: string;
   address?: string;
-  bankAccount?: string;
-  bankCode?: string;
 }): Promise<RegisterClinicResponse> =>
   apiFetch('/clinic/register', {
     method: 'POST',
@@ -242,8 +242,6 @@ export const getClinicSetup = async (): Promise<ClinicSetup> =>
 export const saveClinicSetup = async (payload: {
   name: string;
   address?: string;
-  bankAccount?: string;
-  bankCode?: string;
 }): Promise<ClinicSetup> =>
   apiFetch<ClinicSetup>('/clinic/setup', {
     method: 'PATCH',
@@ -251,6 +249,9 @@ export const saveClinicSetup = async (payload: {
   });
 
 // ─── Claims — clinic-side ─────────────────────────────────────────────────────
+
+export const getClinicWallet = async (): Promise<ClinicWallet> =>
+  apiFetch<ClinicWallet>('/clinic/wallet');
 
 export const lookupMember = async (phone: string): Promise<MemberLookupResult> =>
   apiFetch<MemberLookupResult>(`/claims/members/lookup?phone=${encodeURIComponent(phone)}`);

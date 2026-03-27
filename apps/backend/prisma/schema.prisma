@@ -205,19 +205,21 @@ model Claim {
 
 /// The clinic as an institution — name, address, bank payout details.
 model Clinic {
-  id          String  @id @default(uuid())
-  name        String
-  address     String?
-  bankAccount String? // clinic's bank account for direct payouts
-  bankCode    String? // CBN bank code
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                  String  @id @default(uuid())
+  name                String
+  address             String?
+  walletId            String? // Interswitch merchant wallet ID (auto-provisioned on signup)
+  walletAccountNumber String? // Wema Bank virtual account number for funding
+  walletBankName      String? @default("Wema Bank")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   admins ClinicAdmin[]
   claims Claim[]
 
   @@map("clinics")
 }
+
 
 /// Join table: which User has access to which Clinic.
 model ClinicAdmin {

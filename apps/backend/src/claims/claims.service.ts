@@ -120,8 +120,8 @@ export class ClaimsService {
         clinicId: clinic.id,
         clinicAdminId: admin.id,
         hospitalName: clinic.name,
-        hospitalAccount: clinic.bankAccount ?? null,
-        hospitalBankCode: clinic.bankCode ?? null,
+        hospitalAccount: clinic.walletAccountNumber ?? null,
+        hospitalBankCode: null,
         billAmount: dto.billAmount,
         approvedAmount,
         billPhotoUrl: dto.billPhotoUrl ?? null,
@@ -131,7 +131,7 @@ export class ClaimsService {
       },
     });
 
-    if (clinic.bankAccount && clinic.bankCode) {
+    if (clinic.walletId) {
       await this.payoutQueue.add(PayoutJobName.PROCESS_CLAIM_PAYOUT, {
         claimId: claim.id,
         approvedAmount,
@@ -140,10 +140,13 @@ export class ClaimsService {
         memberPhone: member.phone,
         associationId: dto.associationId,
         clinicName: clinic.name,
-        clinicBankAccount: clinic.bankAccount,
-        clinicBankCode: clinic.bankCode,
+        clinicWalletId: clinic.walletId,
       } satisfies ClaimPayoutJobData);
       this.logger.log(`Payout job queued for claim ${claim.id}`);
+    } else {
+      this.logger.warn(
+        `Claim ${claim.id}: clinic has no wallet — payout skipped`,
+      );
     }
 
     return {
